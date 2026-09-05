@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>keuangan mu</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#123D2C">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Buku Kas">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LOCK SCREEN -->
+<div id="lockScreen" class="lock-screen hidden">
+  <div class="lock-card">
+    <div class="lock-stub">🔒</div>
+    <h1>Buku Kas Terkunci</h1>
+    <p>Masukkan PIN untuk membuka</p>
+    <div class="pin-dots" id="pinDots">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <div id="pinError" class="pin-error"></div>
+    <div class="pin-pad" id="pinPad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button class="pin-empty"></button><button data-k="0">0</button><button data-k="back">⌫</button>
+    </div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app" class="app hidden">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">aset</span>
+      <span class="brand-word">aset ku</span>
+    </div>
+    <button id="themeToggleBtn" class="icon-btn" title="Ganti Tema">☀️</button>
+    <button id="lockBtn" class="icon-btn" title="Kunci">🔒</button>
+    <button id="hideBalanceBtn" class="icon-btn" title="Sembunyikan/Tampilkan Saldo">👁️</button>
+  </header>
+
+  <main id="main" class="main">
+
+    <!-- ============ DASHBOARD ============ -->
+    <section id="page-dashboard" class="page">
+      <div class="ledger-card">
+        <div class="ledger-tab">SALDO SAAT INI</div>
+        <div class="ledger-amount" id="dashTotalCurrent">Rp0</div>
+        <div class="ledger-stitch"></div>
+        <div class="ledger-sub">
+          <div>
+            <span class="dot dot-usable"></span>Bisa digunakan
+            <strong id="dashUsable">Rp0</strong>
+          </div>
+          <div>
+            <span class="dot dot-save"></span>Tabungan
+            <strong id="dashSavings">Rp0</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card in">
+          <div class="stat-label">📥 Total Uang Masuk</div>
+          <div class="stat-value" id="dashTotalIn">Rp0</div>
+        </div>
+        <div class="stat-card out">
+          <div class="stat-label">🛒 Total Pembelian</div>
+          <div class="stat-value" id="dashTotalOut">Rp0</div>
+        </div>
+      </div>
+
+      <div id="spendingSpikeWarning" class="spike-warning hidden">
+        <div class="spike-warning-icon">⚠️</div>
+        <div>
+          <div class="spike-warning-title">Pengeluaran Meningkat</div>
+          <div class="spike-warning-desc">Pengeluaran bulan ini meningkat lebih dari 45% dibanding bulan lalu.</div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>📊 Ringkasan Bulan Ini</h3>
+        <div class="summary-grid">
+          <div class="summary-item"><span>Uang Masuk</span><strong class="pos" id="sumIn">Rp0</strong></div>
+          <div class="summary-item"><span>Pembelian</span><strong class="neg" id="sumOut">Rp0</strong></div>
+          <div class="summary-item"><span>Menabung</span><strong class="neutral" id="sumSave">Rp0</strong></div>
+          <div class="summary-item"><span>Sisa</span><strong id="sumLeft">Rp0</strong></div>
+        </div>
+      </div>
+
+      <div id="budgetDashCard" class="chart-card hidden">
+        <h3>📊 Budget Bulan Ini</h3>
+        <div class="goal-foot">
+          <span class="goal-saved" id="budgetDashAmount">Rp0 / Rp0</span>
+          <span class="goal-percent" id="budgetDashPercent">0%</span>
+        </div>
+        <div class="goal-progress-track"><div class="goal-progress-fill" id="budgetDashFill" style="width:0%"></div></div>
+        <div class="goal-remaining" id="budgetDashNear"></div>
+        <button class="btn-outline full" id="budgetDashViewBtn">Lihat Budget</button>
+      </div>
+
+      <div class="quick-actions">
+        <button class="qa-btn qa-in" data-action="income">
+          <span class="qa-icon">＋</span><span>Uang Masuk</span>
+        </button>
+        <button class="qa-btn qa-out" data-action="expense">
+          <span class="qa-icon">－</span><span>Pembelian</span>
+        </button>
+        <button class="qa-btn qa-save" data-action="save">
+          <span class="qa-icon">🎯</span><span>Nabung</span>
+        </button>
+      </div>
+
+      <h2 class="section-title">Transaksi Terbaru</h2>
+      <div id="dashRecent" class="tx-list"></div>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section id="page-history" class="page hidden">
+      <h2 class="section-title top">Riwayat Transaksi</h2>
+
+      <div class="view-toggle">
+        <button class="view-toggle-btn active" id="historyViewListBtn">📜 List</button>
+        <button class="view-toggle-btn" id="historyViewCalendarBtn">📅 Kalender</button>
+      </div>
+
+      <div id="historyListView">
+      <input id="searchInput" class="search-input" type="text" placeholder="Cari transaksi…">
+
+      <div class="filter-row" id="filterType">
+        <button class="chip active" data-val="all">Semua</button>
+        <button class="chip" data-val="income">🟢 Masuk</button>
+        <button class="chip" data-val="expense">🔴 Beli</button>
+        <button class="chip" data-val="save">🔵 Nabung</button>
+        <button class="chip" data-val="withdraw">🟠 Ambil</button>
+        <button class="chip" data-val="transfer">🔁 Pindah</button>
+        <button class="chip" data-val="goal_purchase">📦 Target</button>
+      </div>
+      <div class="filter-row" id="filterAccount">
+        <button class="chip active" data-val="all">Semua Tempat</button>
+        <button class="chip" data-val="dana">Dana</button>
+        <button class="chip" data-val="gopay">GOPAY</button>
+        <button class="chip" data-val="bank">Bank</button>
+        <button class="chip" data-val="fisik">Fisik</button>
+        <button class="chip" data-val="tabungan">Tabungan</button>
+      </div>
+      <div class="filter-row" id="filterTime">
+        <button class="chip" data-val="today">Hari ini</button>
+        <button class="chip" data-val="week">Minggu ini</button>
+        <button class="chip" data-val="month">Bulan ini</button>
+        <button class="chip" data-val="year">Tahun ini</button>
+        <button class="chip active" data-val="all">Semua waktu</button>
+      </div>
+
+      <div id="historyList" class="tx-list"></div>
+      <div id="historyEmpty" class="empty-state hidden">Belum ada transaksi yang cocok.</div>
+      </div>
+
+      <div id="historyCalendarView" class="hidden">
+        <div class="calendar-nav">
+          <button class="calendar-nav-btn" id="calPrevBtn">‹</button>
+          <div class="calendar-nav-title" id="calTitle">Agustus 2026</div>
+          <button class="calendar-nav-btn" id="calNextBtn">›</button>
+        </div>
+        <button class="btn-outline full" id="calTodayBtn">Kembali ke Bulan Ini</button>
+        <div class="calendar-weekdays">
+          <span>Sen</span><span>Sel</span><span>Rab</span><span>Kam</span><span>Jum</span><span>Sab</span><span>Min</span>
+        </div>
+        <div id="calendarGrid" class="calendar-grid"></div>
+      </div>
+    </section>
+
+    <!-- ============ STATISTIK ============ -->
+    <section id="page-statistik" class="page hidden">
+      <h2 class="section-title top">Statistik</h2>
+
+      <div class="stat-grid five">
+        <div class="mini-stat"><span>Uang Masuk</span><strong id="statIn">Rp0</strong></div>
+        <div class="mini-stat"><span>Pembelian</span><strong id="statOut">Rp0</strong></div>
+        <div class="mini-stat"><span>Tabungan</span><strong id="statSave">Rp0</strong></div>
+        <div class="mini-stat"><span>Saldo Saat Ini</span><strong id="statCurrent">Rp0</strong></div>
+        <div class="mini-stat"><span>Bisa Digunakan</span><strong id="statUsable">Rp0</strong></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h3>Perbandingan</h3>
+          <div class="filter-row" id="filterChartTime">
+            <button class="chip" data-val="today">Hari</button>
+            <button class="chip" data-val="week">Minggu</button>
+            <button class="chip active" data-val="month">Bulan</button>
+            <button class="chip" data-val="year">Tahun</button>
+            <button class="chip" data-val="all">Semua</button>
+          </div>
+        </div>
+        <canvas id="barChart" height="220"></canvas>
+      </div>
+
+      <div class="chart-card">
+        <h3>Distribusi Uang Saat Ini</h3>
+        <canvas id="pieChart" height="240"></canvas>
+      </div>
+
+      <div class="chart-card">
+        <h3>📦 Pembelian Target Tabungan</h3>
+        <div class="stat-grid">
+          <div class="mini-stat"><span>Jumlah target dibeli</span><strong id="statGoalCount">0</strong></div>
+          <div class="mini-stat"><span>Total uang digunakan</span><strong id="statGoalAmount">Rp0</strong></div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>📊 Anggaran <span id="statBudgetMonthLabel" class="achievement-count"></span></h3>
+        <div class="stat-grid">
+          <div class="mini-stat"><span>Total Budget</span><strong id="statBudgetTotal">Rp0</strong></div>
+          <div class="mini-stat"><span>Total Terpakai</span><strong id="statBudgetUsed">Rp0</strong></div>
+          <div class="mini-stat"><span>Total Sisa</span><strong id="statBudgetLeft">Rp0</strong></div>
+        </div>
+        <div id="statBudgetList" class="analysis-list" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>💡 Analisis Keuangan</h3>
+        <div id="analysisList" class="analysis-list"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>🏆 Pencapaian <span id="achievementCount" class="achievement-count"></span></h3>
+        <div id="achievementGrid" class="achievement-grid"></div>
+      </div>
+    </section>
+
+    <!-- ============ UANG (WALLET) ============ -->
+    <section id="page-uang" class="page hidden">
+      <h2 class="section-title top">Dompet / Uang Saya</h2>
+
+      <div class="wallet-grid" id="walletGrid"></div>
+
+      <button id="transferBtn" class="btn-outline full">🔁 Pindah Uang Antar Dompet</button>
+
+      <h2 class="section-title">🎯 Target Tabungan</h2>
+      <div id="goalList" class="goal-list"></div>
+      <button id="addGoalBtn" class="btn-outline full">+ Tambah Target Tabungan</button>
+
+      <h2 class="section-title">Kategori Pembelian</h2>
+      <div id="categoryList" class="category-list"></div>
+      <button id="addCategoryBtn" class="btn-outline full">+ Tambah Kategori</button>
+    </section>
+
+    <!-- ============ WALLET DETAIL ============ -->
+    <section id="page-walletdetail" class="page hidden">
+      <button class="back-btn" id="walletDetailBack">‹ Kembali</button>
+      <h2 class="section-title top" id="walletDetailTitle">Dana</h2>
+      <div class="ledger-card small">
+        <div class="ledger-tab" id="walletDetailTabLabel">SALDO</div>
+        <div class="ledger-amount" id="walletDetailBalance">Rp0</div>
+      </div>
+      <div class="stat-grid" id="walletDetailStats"></div>
+      <h2 class="section-title">Riwayat</h2>
+      <div id="walletDetailHistory" class="tx-list"></div>
+    </section>
+
+    <!-- ============ BUDGET ============ -->
+    <section id="page-budget" class="page hidden">
+      <button class="back-btn" id="budgetBack">‹ Kembali</button>
+      <h2 class="section-title top">📊 Budget Bulanan</h2>
+
+      <div class="calendar-nav">
+        <button class="calendar-nav-btn" id="budgetPrevBtn">‹</button>
+        <div class="calendar-nav-title" id="budgetMonthTitle">Agustus 2026</div>
+        <button class="calendar-nav-btn" id="budgetNextBtn">›</button>
+      </div>
+
+      <div id="budgetList" class="goal-list"></div>
+      <button class="btn-outline full" id="addBudgetBtn">+ Tambah Budget</button>
+    </section>
+
+    <!-- ============ PENGATURAN ============ -->
+    <section id="page-pengaturan" class="page hidden">
+      <h2 class="section-title top">Pengaturan</h2>
+
+      <div class="settings-card">
+        <button class="settings-action" id="openMusikBtn">
+          <span>🎵 Musik</span><span>›</span>
+        </button>
+      </div>
+
+      <div class="settings-card">
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">PIN Keamanan</div>
+            <div class="settings-desc">Kunci aplikasi dengan PIN 4 digit</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="pinToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <button class="settings-action" id="changePinBtn">
+          <span>🔐 Ubah PIN</span><span>›</span>
+        </button>
+      </div>
+
+      <div class="settings-card">
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">Efek Suara & Animasi</div>
+            <div class="settings-desc">Bunyi dan animasi saat transaksi berhasil</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="soundToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <button class="settings-action" id="backupBtn">
+          <span>💾 Backup Data (Export JSON)</span><span>›</span>
+        </button>
+        <button class="settings-action" id="restoreBtn">
+          <span>📂 Import Data (Restore JSON)</span><span>›</span>
+        </button>
+        <input type="file" id="importFile" accept="application/json" class="hidden">
+      </div>
+
+      <div class="settings-card danger">
+        <button class="settings-action" id="resetBtn">
+          <span>🗑️ Hapus Semua Data</span><span>›</span>
+        </button>
+      </div>
+
+      <p class="version-note">Buku Kas · Data tersimpan di perangkat ini saja.</p>
+      <p class="version-note">🎵 File musik tidak termasuk dalam backup.</p>
+    </section>
+
+    <!-- ============ MUSIK ============ -->
+    <section id="page-musik" class="page hidden">
+      <button class="back-btn" id="musikBack">‹ Kembali</button>
+      <h2 class="section-title top">🎵 Musik Saya</h2>
+
+      <div class="mp-card">
+        <div class="mp-now">
+          <div class="mp-now-icon" id="mpNowIcon">🎵</div>
+          <div class="mp-now-info">
+            <div class="mp-now-name" id="mpNowName">Belum ada lagu diputar</div>
+            <div class="mp-now-sub" id="mpNowSub">Tambahkan lagu untuk mulai memutar</div>
+          </div>
+        </div>
+
+        <div class="mp-progress-row">
+          <span class="mp-time" id="mpTimeCurrent">00:00</span>
+          <input type="range" id="mpSeek" class="mp-seek" min="0" max="100" value="0" step="0.1" disabled>
+          <span class="mp-time" id="mpTimeTotal">00:00</span>
+        </div>
+
+        <div class="mp-controls">
+          <button class="mp-ctrl-btn" id="mpPrevBtn" title="Sebelumnya">⏮️</button>
+          <button class="mp-ctrl-btn mp-ctrl-play" id="mpPlayBtn" title="Play/Pause">▶️</button>
+          <button class="mp-ctrl-btn" id="mpNextBtn" title="Berikutnya">⏭️</button>
+        </div>
+
+        <div class="mp-volume-row">
+          <span>🔈</span>
+          <input type="range" id="mpVolume" class="mp-volume" min="0" max="1" value="0.7" step="0.01">
+          <span>🔊</span>
+          <span class="mp-volume-pct" id="mpVolumePct">70%</span>
+        </div>
+
+        <div class="mp-mode-row">
+          <span class="mp-mode-label">Mode:</span>
+          <div class="mp-mode-chips" id="mpModeChips">
+            <button class="chip mp-mode-chip" data-mode="all">🔁 Ulang Semua</button>
+            <button class="chip mp-mode-chip" data-mode="one">🔁 Ulang Satu</button>
+            <button class="chip mp-mode-chip" data-mode="shuffle">🔀 Acak</button>
+          </div>
+        </div>
+
+        <button class="btn-outline full" id="mpAddSongBtn">+ Tambahkan Lagu</button>
+        <input type="file" id="mpFileInput" class="hidden" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/ogg,audio/mp4,audio/x-m4a,audio/m4a,.mp3,.wav,.ogg,.m4a" multiple>
+      </div>
+
+      <h2 class="section-title">🎵 Playlist</h2>
+      <div id="mpPlaylist" class="mp-playlist"></div>
+      <div id="mpPlaylistEmpty" class="empty-state small">Belum ada lagu. Ketuk "+ Tambahkan Lagu" untuk memulai.</div>
+
+      <h2 class="section-title">Pengaturan Musik</h2>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">🎵 Musik</div>
+            <div class="settings-desc">Aktifkan atau nonaktifkan pemutar musik</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="mpMusicToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-title">🔊 Sound Efek</div>
+            <div class="settings-desc">Bunyi transaksi &amp; pencapaian (terpisah dari musik)</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="mpSoundEffectToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MINI PLAYER (tetap terlihat di semua halaman) -->
+  <div id="miniPlayer" class="mini-player hidden">
+    <div class="mini-player-icon">🎵</div>
+    <div class="mini-player-info" id="miniPlayerInfo">
+      <div class="mini-player-name" id="miniPlayerName">—</div>
+      <div class="mini-player-progress"><div class="mini-player-progress-fill" id="miniPlayerProgressFill"></div></div>
+    </div>
+    <button class="mini-player-btn" id="miniPlayerPlayBtn">▶️</button>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="dashboard"><span>🏠</span>Dashboard</button>
+    <button class="nav-btn" data-page="history"><span>📜</span>History</button>
+    <button class="nav-btn" data-page="statistik"><span>📊</span>Statistik</button>
+    <button class="nav-btn" data-page="uang"><span>💰</span>Uang</button>
+    <button class="nav-btn" data-page="pengaturan"><span>⚙️</span>Atur</button>
+  </nav>
+</div>
+
+<!-- ============ TRANSACTION MODAL ============ -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-sheet" id="modalSheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <h3 id="modalTitle">Uang Masuk</h3>
+      <button class="icon-btn" id="modalClose">✕</button>
+    </div>
+    <form id="txForm" class="modal-form"></form>
+  </div>
+</div>
+
+<!-- ============ GENERIC PROMPT MODAL (categories, PIN setup, confirm) ============ -->
+<div id="promptOverlay" class="modal-overlay hidden">
+  <div class="modal-sheet small" id="promptSheet">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <h3 id="promptTitle">Judul</h3>
+      <button class="icon-btn" id="promptClose">✕</button>
+    </div>
+    <div class="modal-form" id="promptBody"></div>
+  </div>
+</div>
+
+<div id="achievementUnlock" class="goal-celebration hidden">
+  <div class="goal-celebration-card">
+    <div class="achievement-unlock-icon" id="achievementUnlockIcon">🏆</div>
+    <div class="goal-celebration-title">Pencapaian Baru!</div>
+    <div class="goal-celebration-sub" id="achievementUnlockTitle">Target Pertama</div>
+    <div class="achievement-unlock-desc" id="achievementUnlockDesc">Berhasil mencapai target tabungan pertama.</div>
+  </div>
+</div>
+
+<div id="goalCelebration" class="goal-celebration hidden">
+  <div class="goal-celebration-card">
+    <div class="goal-celebration-check">✓</div>
+    <div class="goal-celebration-title">🎉 Target Tercapai!</div>
+    <div class="goal-celebration-sub" id="goalCelebrationSub">Barang berhasil dibeli!</div>
+  </div>
+</div>
+
+<div id="successBurst" class="success-burst hidden">
+  <div class="success-burst-ring" id="successBurstRing"></div>
+  <div class="success-burst-icon" id="successBurstIcon">✅</div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="chart.umd.min.js"></script>
+<script src="script.js?v=10"></script>
+<script src="music.js?v=2"></script>
+</body>
+</html>
