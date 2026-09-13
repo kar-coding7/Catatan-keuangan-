@@ -1899,26 +1899,44 @@ function randomSalt(){
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+const NEW_PIN_LENGTH = 6;
+
 let pinBuffer = '';
 let pinMode = 'unlock'; // 'unlock' | 'setup1' | 'setup2'
 let pinFirstEntry = '';
 
 const lockScreen = document.getElementById('lockScreen');
 const appEl = document.getElementById('app');
-const pinDots = document.getElementById('pinDots').querySelectorAll('span');
+const pinDotsWrap = document.getElementById('pinDots');
 const pinError = document.getElementById('pinError');
+
+function requiredPinLength(){
+  // Saat unlock, pakai panjang PIN yang tersimpan (default 4 untuk data lama
+  // sebelum fitur PIN 6-digit ada). Saat membuat/mengubah PIN, selalu 6 digit.
+  if(pinMode==='unlock') return state.pin.length || 4;
+  return NEW_PIN_LENGTH;
+}
+function renderPinDots(){
+  const len = requiredPinLength();
+  pinDotsWrap.innerHTML = '<span></span>'.repeat(len);
+  updatePinDots();
+}
+function currentPinDots(){
+  return pinDotsWrap.querySelectorAll('span');
+}
 
 document.getElementById('pinPad').addEventListener('click', (e)=>{
   const btn = e.target.closest('button[data-k]');
   if(!btn) return;
   const k = btn.dataset.k;
+  const len = requiredPinLength();
   if(k==='back'){ pinBuffer = pinBuffer.slice(0,-1); }
-  else if(pinBuffer.length<4){ pinBuffer += k; }
+  else if(pinBuffer.length<len){ pinBuffer += k; }
   updatePinDots();
-  if(pinBuffer.length===4){ setTimeout(handlePinComplete, 120); }
+  if(pinBuffer.length===len){ setTimeout(handlePinComplete, 120); }
 });
 function updatePinDots(){
-  pinDots.forEach((d,i)=> d.classList.toggle('filled', i<pinBuffer.length));
+  currentPinDots().forEach((d,i)=> d.classList.toggle('filled', i<pinBuffer.length));
 }
 async function handlePinComplete(){
   const entered = pinBuffer;
@@ -1938,12 +1956,12 @@ async function handlePinComplete(){
     pinMode = 'setup2';
     pinError.textContent = '';
     document.querySelector('.lock-card p').textContent = 'Ulangi PIN untuk konfirmasi';
-    updatePinDots();
+    renderPinDots();
   } else if(pinMode==='setup2'){
     if(entered===pinFirstEntry){
       const salt = randomSalt();
       const hash = await hashPin(entered, salt);
-      state.pin = {enabled:true, hash, salt};
+      state.pin = {enabled:true, hash, salt, length: NEW_PIN_LENGTH};
       savePin();
       document.getElementById('pinToggle').checked = true;
       exitPinSetup();
@@ -1951,8 +1969,8 @@ async function handlePinComplete(){
     } else {
       pinError.textContent = 'PIN tidak sama, coba lagi';
       pinMode = 'setup1';
-      document.querySelector('.lock-card p').textContent = 'Buat PIN 4 digit';
-      updatePinDots();
+      document.querySelector('.lock-card p').textContent = `Buat PIN ${NEW_PIN_LENGTH} digit`;
+      renderPinDots();
     }
   }
 }
@@ -1968,8 +1986,8 @@ function showLockScreen(mode){
   pinBuffer = '';
   pinError.textContent = '';
   document.querySelector('.lock-card h1').textContent = pinMode==='unlock' ? 'Buku Kas Terkunci' : 'Atur PIN Baru';
-  document.querySelector('.lock-card p').textContent = pinMode==='unlock' ? 'Masukkan PIN untuk membuka' : 'Buat PIN 4 digit';
-  updatePinDots();
+  document.querySelector('.lock-card p').textContent = pinMode==='unlock' ? 'Masukkan PIN untuk membuka' : `Buat PIN ${NEW_PIN_LENGTH} digit`;
+  renderPinDots();
   lockScreen.classList.remove('hidden');
   appEl.classList.add('hidden');
 }
@@ -2040,10 +2058,11 @@ document.getElementById('musikBack').addEventListener('click', ()=>{
 
 document.getElementById('changePinBtn').addEventListener('click', ()=>{
   if(!state.pin.enabled){ toast('Aktifkan PIN dulu sebelum mengubahnya'); return; }
+  const oldLen = state.pin.length || 4;
   showPrompt('🔐 Ubah PIN', `
-    <div class="field"><label>PIN Lama</label><input type="password" inputmode="numeric" maxlength="4" id="oldPinInput" placeholder="••••"></div>
-    <div class="field"><label>PIN Baru</label><input type="password" inputmode="numeric" maxlength="4" id="newPinInput" placeholder="••••"></div>
-    <div class="field"><label>Konfirmasi PIN Baru</label><input type="password" inputmode="numeric" maxlength="4" id="confirmPinInput" placeholder="••••"></div>
+    <div class="field"><label>PIN Lama</label><input type="password" inputmode="numeric" maxlength="${oldLen}" id="oldPinInput" placeholder="${'•'.repeat(oldLen)}"></div>
+    <div class="field"><label>PIN Baru (${NEW_PIN_LENGTH} digit)</label><input type="password" inputmode="numeric" maxlength="${NEW_PIN_LENGTH}" id="newPinInput" placeholder="${'•'.repeat(NEW_PIN_LENGTH)}"></div>
+    <div class="field"><label>Konfirmasi PIN Baru</label><input type="password" inputmode="numeric" maxlength="${NEW_PIN_LENGTH}" id="confirmPinInput" placeholder="${'•'.repeat(NEW_PIN_LENGTH)}"></div>
     <div id="changePinError" class="pin-error-inline"></div>
     <button class="btn-primary" id="changePinSaveBtn">Ubah PIN</button>
   `);
@@ -2053,8 +2072,14 @@ document.getElementById('changePinBtn').addEventListener('click', ()=>{
     const confirmPin = document.getElementById('confirmPinInput').value;
     const errEl = document.getElementById('changePinError');
     errEl.textContent = '';
-    if(!/^\d{4}$/.test(oldPin) || !/^\d{4}$/.test(newPin) || !/^\d{4}$/.test(confirmPin)){
-      errEl.textContent = 'PIN harus 4 digit angka.';
+    const oldRegex = new RegExp(`^\\d{${oldLen}}$`);
+    const newRegex = new RegExp(`^\\d{${NEW_PIN_LENGTH}}$`);
+    if(!oldRegex.test(oldPin)){
+      errEl.textContent = `PIN lama harus ${oldLen} digit angka.`;
+      return;
+    }
+    if(!newRegex.test(newPin) || !newRegex.test(confirmPin)){
+      errEl.textContent = `PIN baru harus ${NEW_PIN_LENGTH} digit angka.`;
       return;
     }
     const oldHash = await hashPin(oldPin, state.pin.salt);
@@ -2068,7 +2093,7 @@ document.getElementById('changePinBtn').addEventListener('click', ()=>{
     }
     const salt = randomSalt();
     const hash = await hashPin(newPin, salt);
-    state.pin = {enabled:true, hash, salt};
+    state.pin = {enabled:true, hash, salt, length: NEW_PIN_LENGTH};
     savePin();
     closePrompt();
     toast('PIN berhasil diubah');
@@ -2180,6 +2205,10 @@ function init(){
     appEl.classList.remove('hidden');
   }
   showPage('dashboard');
+  setTimeout(()=>{
+    const splash = document.getElementById('splashScreen');
+    if(splash) splash.classList.add('hide');
+  }, 1100);
 }
 document.getElementById('hideBalanceBtn').textContent = state.hideBalance ? '🙈' : '👁️';
 init();
