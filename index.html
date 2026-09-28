@@ -154,14 +154,7 @@
         <button class="chip" data-val="transfer">🔁 Pindah</button>
         <button class="chip" data-val="goal_purchase">📦 Target</button>
       </div>
-      <div class="filter-row" id="filterAccount">
-        <button class="chip active" data-val="all">Semua Tempat</button>
-        <button class="chip" data-val="dana">Dana</button>
-        <button class="chip" data-val="gopay">GOPAY</button>
-        <button class="chip" data-val="bank">Bank</button>
-        <button class="chip" data-val="fisik">Fisik</button>
-        <button class="chip" data-val="tabungan">Tabungan</button>
-      </div>
+      <div class="filter-row" id="filterAccount"></div>
       <div class="filter-row" id="filterTime">
         <button class="chip" data-val="today">Hari ini</button>
         <button class="chip" data-val="week">Minggu ini</button>
@@ -252,7 +245,10 @@
     <section id="page-uang" class="page hidden">
       <h2 class="section-title top">Dompet / Uang Saya</h2>
 
-      <div class="wallet-grid" id="walletGrid"></div>
+      <div class="wallet-groups" id="walletGrid"></div>
+
+      <button id="addAccountBtn" class="btn-outline full">+ Tambah Akun</button>
+      <div class="wallet-grid" id="savingsWrap"></div>
 
       <button id="transferBtn" class="btn-outline full">🔁 Pindah Uang Antar Dompet</button>
 
@@ -273,6 +269,7 @@
         <div class="ledger-tab" id="walletDetailTabLabel">SALDO</div>
         <div class="ledger-amount" id="walletDetailBalance">Rp0</div>
       </div>
+      <div class="wd-actions" id="walletDetailActions"></div>
       <div class="stat-grid" id="walletDetailStats"></div>
       <h2 class="section-title">Riwayat</h2>
       <div id="walletDetailHistory" class="tx-list"></div>

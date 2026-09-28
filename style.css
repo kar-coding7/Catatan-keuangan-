@@ -816,3 +816,17 @@ input,select,textarea{font-family:inherit;}
   display:flex; align-items:center; justify-content:center;
 }
 .mini-player-btn:active{ transform:scale(0.94); }
+
+/* ---- kelompok akun ---- */
+.wallet-groups{display:flex; flex-direction:column; gap:6px;}
+.wg-head{display:flex; justify-content:space-between; align-items:baseline; margin:10px 2px 2px; font-weight:600; color:var(--heading);}
+.wg-head strong{font-family:'JetBrains Mono',monospace; font-size:0.85rem; color:var(--ink-soft);}
+#addAccountBtn{margin:14px 0 12px;}
+#savingsWrap{margin-bottom:12px;}
+.wd-actions{display:flex; gap:8px; margin:10px 0;}
+.wd-actions .btn-secondary{flex:1;}
+.account-pick{align-items:start;}
+.acc-col{display:flex; flex-direction:column; gap:8px; min-width:0;}
+.acc-col-title{font-size:0.8rem; font-weight:600; color:var(--ink-soft); padding-left:2px;}
+.account-opt{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.account-opt.savings{border-style:dashed;}

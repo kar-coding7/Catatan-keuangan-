@@ -15,13 +15,29 @@ const LS_BUDGETS = 'kp_budgets_v1';
 
 const DEFAULT_CATEGORIES = ['Makanan','Minuman','Transportasi','Pendidikan','Teknologi','Hiburan','Pakaian','Kesehatan','Keperluan pribadi','Lainnya'];
 
-const ACCOUNTS = [
-  {key:'dana', label:'Dana', icon:'📱'},
-  {key:'gopay', label:'GOPAY', icon:'💳'},
+const LS_ACCOUNTS = 'kp_accounts_v1';
+const LS_BACKUP_PRE = 'kp_backup_pre_groups_v1';
+const GROUPS = [
+  {key:'ewallet', label:'E-Wallet', icon:'📱'},
   {key:'bank', label:'Bank', icon:'🏦'},
-  {key:'fisik', label:'Fisik', icon:'💵'},
+  {key:'lainnya', label:'Lainnya', icon:'💵'},
 ];
-const ACCOUNT_MAP = Object.fromEntries(ACCOUNTS.map(a=>[a.key,a]));
+const BASE_ACCOUNTS = [
+  {key:'dana', label:'Dana', icon:'📱', group:'ewallet'},
+  {key:'gopay', label:'GOPAY', icon:'💳', group:'ewallet'},
+  {key:'bank', label:'SeaBank', icon:'🏦', group:'bank'},
+  {key:'fisik', label:'Fisik', icon:'💵', group:'lainnya'},
+];
+const ACCOUNTS = [];
+let ACCOUNT_MAP = {};
+let customAccounts = [];
+function rebuildAccounts(){
+  ACCOUNTS.length = 0;
+  BASE_ACCOUNTS.forEach(a=> ACCOUNTS.push(a));
+  customAccounts.forEach(a=> ACCOUNTS.push({...a, icon: (GROUPS.find(g=>g.key===a.group)||GROUPS[2]).icon}));
+  ACCOUNT_MAP = Object.fromEntries(ACCOUNTS.map(a=>[a.key,a]));
+}
+rebuildAccounts();
 
 const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
@@ -57,6 +73,17 @@ let pieChartInstance = null;
    PERSISTENCE
    ====================================================================== */
 function loadData(){
+  try{ // salinan pengaman data lama, dibuat sekali sebelum fitur kelompok akun dipakai
+    if(!localStorage.getItem(LS_BACKUP_PRE)){
+      const snap = {savedAt: new Date().toISOString()};
+      [LS_TX, LS_CAT, LS_GOALS, LS_ACHIEVEMENTS, LS_BUDGETS].forEach(k=>{ snap[k] = localStorage.getItem(k); });
+      localStorage.setItem(LS_BACKUP_PRE, JSON.stringify(snap));
+    }
+  }catch(e){}
+  try{ customAccounts = JSON.parse(localStorage.getItem(LS_ACCOUNTS)) || []; }catch(e){ customAccounts = []; }
+  if(!Array.isArray(customAccounts)) customAccounts = [];
+  customAccounts = customAccounts.filter(a=> a && a.key && a.label && GROUPS.some(g=>g.key===a.group));
+  rebuildAccounts();
   try{ state.transactions = JSON.parse(localStorage.getItem(LS_TX)) || []; }catch(e){ state.transactions = []; }
   try{ state.categories = JSON.parse(localStorage.getItem(LS_CAT)) || null; }catch(e){ state.categories = null; }
   if(!state.categories || !Array.isArray(state.categories) || state.categories.length===0){
@@ -77,6 +104,7 @@ function saveTransactions(){ localStorage.setItem(LS_TX, JSON.stringify(state.tr
 function saveCategories(){ localStorage.setItem(LS_CAT, JSON.stringify(state.categories)); }
 function savePin(){ localStorage.setItem(LS_PIN, JSON.stringify(state.pin)); }
 function saveGoals(){ localStorage.setItem(LS_GOALS, JSON.stringify(state.goals)); }
+function saveAccounts(){ localStorage.setItem(LS_ACCOUNTS, JSON.stringify(customAccounts)); }
 function saveAchievements(){ localStorage.setItem(LS_ACHIEVEMENTS, JSON.stringify(state.achievements)); }
 function saveBudgets(){ localStorage.setItem(LS_BUDGETS, JSON.stringify(state.budgets)); }
 function formatBalance(amount) {
@@ -237,7 +265,8 @@ function toast(msg){
    (always derived from the transaction list — never a stored balance)
    ====================================================================== */
 function computeBalances(list){
-  const acc = {dana:0, gopay:0, bank:0, fisik:0, tabungan:0};
+  const acc = {tabungan:0};
+  ACCOUNTS.forEach(a=>{ acc[a.key] = 0; });
   (list||state.transactions).forEach(tx=>{
     const amt = Number(tx.amount)||0;
     if(!(tx.account in acc)) return;
@@ -247,6 +276,7 @@ function computeBalances(list){
     else if(tx.type==='withdraw'){ acc[tx.account]+=amt; acc.tabungan-=amt; }
     else if(tx.type==='transfer'){ acc[tx.account]-=amt; if(tx.toAccount in acc) acc[tx.toAccount]+=amt; }
     else if(tx.type==='goal_purchase'){ acc.tabungan-=amt; }
+    else if(tx.type==='opening'){ acc[tx.account]+=amt; }
   });
   return acc;
 }
@@ -254,7 +284,7 @@ function computeTotals(){
   const bal = computeBalances();
   const totalIncome = sumWhere(tx=>tx.type==='income');
   const totalExpense = sumWhere(tx=>tx.type==='expense');
-  const totalUsable = bal.dana + bal.gopay + bal.bank + bal.fisik;
+  const totalUsable = ACCOUNTS.reduce((s,a)=> s + (bal[a.key]||0), 0);
   const totalCurrent = totalUsable + bal.tabungan;
   return {
     balances: bal,
@@ -286,6 +316,7 @@ function computeAccountStats(key){
   const transferKeluar = sumWhere(tx=>tx.type==='transfer' && tx.account===key);
   const transferMasuk = sumWhere(tx=>tx.type==='transfer' && tx.toAccount===key);
   return [
+    {label:'Saldo awal', value: sumWhere(tx=>tx.type==='opening' && tx.account===key)},
     {label:'Total uang masuk', value: masuk},
     {label:'Total pembelian', value: keluar},
     {label:'Dipindah ke Tabungan', value: keTabungan},
@@ -692,6 +723,7 @@ const TYPE_META = {
   withdraw: {icon:'🟠', cls:'withdraw', amtCls:'neutral', sign:'',  label:'Ambil Tabungan'},
   transfer: {icon:'🔁', cls:'transfer', amtCls:'neutral', sign:'',  label:'Pindah Uang'},
   goal_purchase: {icon:'📦', cls:'goal-purchase', amtCls:'neg', sign:'-', label:'Target Tabungan'},
+  opening:  {icon:'🏁', cls:'transfer', amtCls:'pos', sign:'+', label:'Saldo Awal'},
 };
 
 function txSubLabel(tx){
@@ -711,6 +743,7 @@ function txSubLabel(tx){
     return `${formatDateID(tx.date)} · ${accLabel} → ${toLabel}`;
   }
   if(tx.type==='goal_purchase') return `${formatDateID(tx.date)} · 📦 Target Tabungan · Sudah Dibeli`;
+  if(tx.type==='opening') return `${formatDateID(tx.date)} · Saldo awal · ${accLabel}`;
   return formatDateID(tx.date);
 }
 function txName(tx){
@@ -720,6 +753,7 @@ function txName(tx){
   if(tx.type==='withdraw') return tx.note || 'Ambil dari Tabungan';
   if(tx.type==='transfer') return tx.note || 'Pindah uang';
   if(tx.type==='goal_purchase') return tx.note || 'Target Tabungan';
+  if(tx.type==='opening') return tx.note || 'Saldo awal';
   return tx.note||'';
 }
 function renderTxList(container, list){
@@ -824,7 +858,7 @@ function setupFilterRow(id, key){
   });
 }
 setupFilterRow('filterType','type');
-setupFilterRow('filterAccount','account');
+// chip filter akun dibuat oleh renderAccountFilter()
 setupFilterRow('filterTime','time');
 
 document.getElementById('searchInput').addEventListener('input', (e)=>{
@@ -1055,16 +1089,17 @@ function updateCharts(){
   const bal = computeBalances();
   const pieCtx = document.getElementById('pieChart');
   if(pieChartInstance) pieChartInstance.destroy();
-  const pieLabels = ['Dana','GOPAY','Bank','Fisik','Tabungan'];
-  const pieData = [bal.dana, bal.gopay, bal.bank, bal.fisik, bal.tabungan];
+  const pieLabels = [...ACCOUNTS.map(a=>a.label), 'Tabungan'];
+  const pieData = [...ACCOUNTS.map(a=>bal[a.key]), bal.tabungan];
+  const PIE_COLORS = ['#E1A23D','#8B5CF6','#2F6FA3','#6B7280','#D9534F','#0EA5A5','#C2410C','#7C3AED'];
   const hasAny = pieData.some(v=>v>0);
   pieChartInstance = new Chart(pieCtx, {
     type: 'doughnut',
     data: {
       labels: pieLabels,
       datasets: [{
-        data: hasAny ? pieData : [1,1,1,1,1],
-        backgroundColor: ['#E1A23D','#8B5CF6','#2F6FA3','#6B7280','#1F6F50'],
+        data: hasAny ? pieData : pieData.map(()=>1),
+        backgroundColor: pieLabels.map((_,i)=> i===pieLabels.length-1 ? '#1F6F50' : PIE_COLORS[i%PIE_COLORS.length]),
         borderWidth: 2,
         borderColor: themeSurfaceColor,
       }]
@@ -1085,18 +1120,32 @@ function renderUang(){
   const bal = computeBalances();
   const grid = document.getElementById('walletGrid');
   grid.innerHTML = '';
-  ACCOUNTS.forEach(a=>{
-    const card = document.createElement('button');
-    card.className = 'wallet-card';
-    card.innerHTML = `<div class="wc-icon">${a.icon}</div><div class="wc-name">${a.label}</div><div class="wc-amount">${formatBalance(bal[a.key])}</div>`;
-    card.addEventListener('click', ()=> openWalletDetail(a.key));
-    grid.appendChild(card);
+  GROUPS.forEach(g=>{
+    const accs = ACCOUNTS.filter(a=>a.group===g.key);
+    if(accs.length===0) return;
+    const total = accs.reduce((s,a)=> s + (bal[a.key]||0), 0);
+    const head = document.createElement('div');
+    head.className = 'wg-head';
+    head.innerHTML = `<span>${g.icon} ${g.label}</span><strong>${formatBalance(total)}</strong>`;
+    grid.appendChild(head);
+    const sub = document.createElement('div');
+    sub.className = 'wallet-grid';
+    accs.forEach(a=>{
+      const card = document.createElement('button');
+      card.className = 'wallet-card';
+      card.innerHTML = `<div class="wc-icon">${a.icon}</div><div class="wc-name">${escapeHtml(a.label)}</div><div class="wc-amount">${formatBalance(bal[a.key])}</div>`;
+      card.addEventListener('click', ()=> openWalletDetail(a.key));
+      sub.appendChild(card);
+    });
+    grid.appendChild(sub);
   });
+  const savingsWrap = document.getElementById('savingsWrap');
+  savingsWrap.innerHTML = '';
   const savingsCard = document.createElement('button');
   savingsCard.className = 'wallet-card savings';
   savingsCard.innerHTML = `<div class="wc-icon">🎯</div><div class="wc-name">Tabungan</div><div class="wc-amount">${formatBalance(bal.tabungan)}</div>`;
   savingsCard.addEventListener('click', ()=> openWalletDetail('tabungan'));
-  grid.appendChild(savingsCard);
+  savingsWrap.appendChild(savingsCard);
 
   renderGoalList();
   renderCategoryList();
@@ -1499,7 +1548,7 @@ function playPurchaseCelebration(goal){
 /* ======================================================================
    WALLET DETAIL
    ====================================================================== */
-const WALLET_LABELS = {dana:'Dana', gopay:'GOPAY', bank:'Bank', fisik:'Uang Fisik', tabungan:'Tabungan'};
+function walletLabel(k){ return k==='tabungan' ? 'Tabungan' : (ACCOUNT_MAP[k]?.label || String(k)); }
 function openWalletDetail(key){
   state.currentWallet = key;
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
@@ -1512,9 +1561,21 @@ document.getElementById('walletDetailBack').addEventListener('click', ()=> showP
 function renderWalletDetail(){
   const key = state.currentWallet;
   const bal = computeBalances();
-  document.getElementById('walletDetailTitle').textContent = WALLET_LABELS[key];
-  document.getElementById('walletDetailTabLabel').textContent = 'SALDO ' + WALLET_LABELS[key].toUpperCase();
+  document.getElementById('walletDetailTitle').textContent = walletLabel(key);
+  document.getElementById('walletDetailTabLabel').textContent = 'SALDO ' + walletLabel(key).toUpperCase();
   document.getElementById('walletDetailBalance').textContent = formatBalance(bal[key]);
+  const actWrap = document.getElementById('walletDetailActions');
+  actWrap.innerHTML = '';
+  const customAcc = customAccounts.find(a=>a.key===key);
+  if(customAcc){
+    const ren = document.createElement('button');
+    ren.className = 'btn-secondary'; ren.textContent = '✏️ Ubah Nama';
+    ren.addEventListener('click', ()=> openAccountForm(customAcc));
+    const del = document.createElement('button');
+    del.className = 'btn-secondary'; del.textContent = '🗑️ Hapus Akun';
+    del.addEventListener('click', ()=> deleteAccount(key));
+    actWrap.appendChild(ren); actWrap.appendChild(del);
+  }
 
   const statsWrap = document.getElementById('walletDetailStats');
   statsWrap.innerHTML = '';
@@ -1550,9 +1611,13 @@ function closeTxModal(){
 }
 
 function accountPickerHtml(name, options, selected){
-  return `<div class="account-pick" data-picker="${name}">` +
-    options.map(o=> `<button type="button" class="account-opt${o.key===selected?' active':''}" data-val="${o.key}">${o.label}</button>`).join('') +
-  `</div>`;
+  const cols = GROUPS.map(g=>{
+    const opts = options.filter(o=> (o.key==='tabungan' ? 'lainnya' : o.group)===g.key);
+    return `<div class="acc-col"><div class="acc-col-title">${g.label}</div>` +
+      opts.map(o=> `<button type="button" class="account-opt${o.key==='tabungan'?' savings':''}${o.key===selected?' active':''}" data-val="${o.key}">${escapeHtml(o.label)}</button>`).join('') +
+    `</div>`;
+  }).join('');
+  return `<div class="account-pick" data-picker="${name}">${cols}</div>`;
 }
 function wirePicker(root, name){
   const picker = root.querySelector(`[data-picker="${name}"]`);
@@ -1786,10 +1851,10 @@ function openTxMenu(id){
 
   showPrompt('Transaksi', `
     <p><strong>${escapeHtml(txName(tx))}</strong><br><span style="color:var(--ink-soft); font-size:0.85rem;">${formatBalance(tx.amount)} · ${formatDateID(tx.date)}</span></p>
-    <button class="btn-secondary" id="txEditBtn">✏️ Edit Transaksi</button>
+    ${tx.type==='opening' ? '' : '<button class="btn-secondary" id="txEditBtn">✏️ Edit Transaksi</button>'}
     <button class="btn-primary danger" id="txDelBtn">🗑️ Hapus Transaksi</button>
   `);
-  document.getElementById('txEditBtn').addEventListener('click', ()=>{
+  document.getElementById('txEditBtn')?.addEventListener('click', ()=>{
     closePrompt();
     openTxModal(tx.type, tx);
   });
@@ -2113,6 +2178,7 @@ document.getElementById('backupBtn').addEventListener('click', ()=>{
     goals: state.goals,
     achievements: state.achievements,
     budgets: state.budgets,
+    accounts: customAccounts,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2153,6 +2219,8 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
       state.goals = goalsInFile;
       state.achievements = achievementsInFile;
       state.budgets = budgetsInFile;
+      customAccounts = Array.isArray(data.accounts) ? data.accounts.filter(a=> a && a.key && a.label && GROUPS.some(g=>g.key===a.group)) : [];
+      rebuildAccounts(); saveAccounts(); renderAccountFilter();
       saveTransactions();
       saveCategories();
       saveGoals();
@@ -2179,6 +2247,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
     state.categories = DEFAULT_CATEGORIES.map(name=>({id:'cat_'+name.toLowerCase().replace(/\s+/g,'_'), name}));
     state.goals = [];
     state.budgets = [];
+    customAccounts = []; rebuildAccounts(); saveAccounts(); renderAccountFilter();
     saveTransactions();
     saveCategories();
     saveGoals();
@@ -2193,8 +2262,90 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 /* ======================================================================
    INIT
    ====================================================================== */
+/* ======================================================================
+   KELOLA AKUN (tambah / ubah nama / hapus)
+   ====================================================================== */
+function renderAccountFilter(){
+  const row = document.getElementById('filterAccount');
+  const cur0 = state.historyFilters.account;
+  if(cur0!=='all' && cur0!=='tabungan' && !ACCOUNT_MAP[cur0]) state.historyFilters.account = 'all';
+  const cur = state.historyFilters.account;
+  row.innerHTML = [{key:'all', label:'Semua Tempat'}, ...ACCOUNTS, {key:'tabungan', label:'Tabungan'}]
+    .map(a=> `<button class="chip${a.key===cur?' active':''}" data-val="${a.key}">${escapeHtml(a.label)}</button>`).join('');
+  setupFilterRow('filterAccount','account');
+}
+function accountNameError(name, exceptKey){
+  if(!name) return 'Nama akun tidak boleh kosong';
+  if(name.length>14) return 'Nama akun maksimal 14 karakter';
+  const used = ACCOUNTS.filter(a=>a.key!==exceptKey).map(a=>a.label).concat(['Tabungan']);
+  if(used.some(l=> l.toLowerCase()===name.toLowerCase())) return 'Nama akun sudah dipakai';
+  return null;
+}
+function openAccountForm(existing){
+  const groupPick = existing ? '' : `<div class="field"><label>Kelompok</label><div class="account-pick" data-picker="grp">${GROUPS.map((g,i)=>`<button type="button" class="account-opt${i===0?' active':''}" data-val="${g.key}">${g.label}</button>`).join('')}</div></div>`;
+  const initField = existing ? '' : `<div class="field"><label>Saldo awal (opsional)</label><div class="amount-input-row"><input id="accInitInput" type="number" min="0" placeholder="0"><button type="button" class="k-btn" id="accInitK">K</button></div></div>`;
+  showPrompt(existing ? 'Ubah Nama Akun' : 'Tambah Akun', `
+    <div class="field"><label>Nama akun</label><input id="accNameInput" type="text" maxlength="14" placeholder="Contoh: OVO, Krom Bank" value="${existing?escapeHtml(existing.label):''}"></div>
+    ${groupPick}${initField}
+    <button class="btn-primary" id="accSaveBtn">Simpan</button>
+  `);
+  const grp = existing ? null : wirePicker(promptBody, 'grp');
+  const kBtn = document.getElementById('accInitK');
+  if(kBtn) kBtn.addEventListener('click', ()=>{
+    const inp = document.getElementById('accInitInput');
+    const d = inp.value.replace(/[^0-9]/g,'');
+    if(!d || d==='0') return;
+    inp.value = d + '000'; inp.focus();
+  });
+  document.getElementById('accSaveBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('accNameInput').value.trim();
+    const err = accountNameError(name, existing ? existing.key : null);
+    if(err){ toast(err); return; }
+    if(existing){
+      const target = customAccounts.find(a=>a.key===existing.key);
+      if(target) target.label = name;
+    } else {
+      const key = 'a_' + Date.now().toString(36);
+      customAccounts.push({key, label:name, group: grp.get() || 'lainnya'});
+      const initial = Number(document.getElementById('accInitInput').value) || 0;
+      if(initial>0) addTransaction({type:'opening', amount:initial, date:todayISO(), account:key, note:''});
+    }
+    saveAccounts(); rebuildAccounts(); renderAccountFilter();
+    closePrompt();
+    toast(existing ? 'Nama akun diperbarui' : 'Akun ditambahkan');
+    refreshCurrentView();
+  });
+}
+function deleteAccount(key){
+  const acc = customAccounts.find(a=>a.key===key);
+  if(!acc) return;
+  if(state.transactions.some(t=> t.account===key || t.toAccount===key)){
+    showPrompt('Akun Tidak Bisa Dihapus', `
+      <p>Akun <strong>${escapeHtml(acc.label)}</strong> sudah punya transaksi atau saldo, jadi tidak bisa dihapus. Hapus atau pindahkan dulu transaksinya kalau memang ingin menghapus akun ini.</p>
+      <button class="btn-primary" id="accDelOk">Oke</button>
+    `);
+    document.getElementById('accDelOk').addEventListener('click', closePrompt);
+    return;
+  }
+  showPrompt('Hapus Akun', `
+    <p>Hapus akun <strong>${escapeHtml(acc.label)}</strong>?</p>
+    <button class="btn-primary danger" id="accDelConfirm">Ya, Hapus</button>
+    <button class="btn-secondary" id="accDelCancel">Batal</button>
+  `);
+  document.getElementById('accDelCancel').addEventListener('click', closePrompt);
+  document.getElementById('accDelConfirm').addEventListener('click', ()=>{
+    customAccounts = customAccounts.filter(a=>a.key!==key);
+    saveAccounts(); rebuildAccounts(); renderAccountFilter();
+    closePrompt();
+    toast('Akun dihapus');
+    showPage('uang');
+  });
+}
+document.getElementById('addAccountBtn').addEventListener('click', ()=> openAccountForm());
+
 function init(){
   loadData();
+  renderAccountFilter();
   applyTheme();
   document.getElementById('pinToggle').checked = !!state.pin.enabled;
   document.getElementById('soundToggle').checked = state.soundEnabled;
