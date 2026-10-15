@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>keuangan mu</title>
+<title>Dompet ku</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#123D2C">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Buku Kas">
+<meta name="apple-mobile-web-app-title" content="Dompet ku">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,8 +20,8 @@
 
 <!-- SPLASH SCREEN -->
 <div id="splashScreen" class="splash-screen">
-  <div class="splash-mark">aset</div>
-  <div class="splash-word">aset ku</div>
+  <div class="splash-mark">Rp</div>
+  <div class="splash-word">Dompet ku</div>
   <div class="splash-loader"><span></span><span></span><span></span></div>
 </div>
 
@@ -29,7 +29,7 @@
 <div id="lockScreen" class="lock-screen hidden">
   <div class="lock-card">
     <div class="lock-stub">🔒</div>
-    <h1>Buku Kas Terkunci</h1>
+    <h1>Dompet ku Terkunci</h1>
     <p>Masukkan PIN untuk membuka</p>
     <div class="pin-dots" id="pinDots">
       <span></span><span></span><span></span><span></span>
@@ -49,8 +49,8 @@
 
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark">aset</span>
-      <span class="brand-word">aset ku</span>
+      <span class="brand-mark">Rp</span>
+      <span class="brand-word">Dompet ku</span>
     </div>
     <button id="themeToggleBtn" class="icon-btn" title="Ganti Tema">☀️</button>
     <button id="lockBtn" class="icon-btn" title="Kunci">🔒</button>
@@ -252,9 +252,9 @@
 
       <button id="transferBtn" class="btn-outline full">🔁 Pindah Uang Antar Dompet</button>
 
-      <h2 class="section-title">🎯 Target Tabungan</h2>
+      <h2 class="section-title">🎯 Tabungan</h2>
       <div id="goalList" class="goal-list"></div>
-      <button id="addGoalBtn" class="btn-outline full">+ Tambah Target Tabungan</button>
+      <button id="addGoalBtn" class="btn-outline full">+ Tambah Tabungan</button>
 
       <h2 class="section-title">Kategori Pembelian</h2>
       <div id="categoryList" class="category-list"></div>
@@ -345,7 +345,7 @@
         </button>
       </div>
 
-      <p class="version-note">Buku Kas · Data tersimpan di perangkat ini saja.</p>
+      <p class="version-note">Dompet ku · Data tersimpan di perangkat ini saja.</p>
       <p class="version-note">🎵 File musik tidak termasuk dalam backup.</p>
     </section>
 
@@ -494,7 +494,14 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="chart.umd.min.js"></script>
-<script src="script.js?v=11"></script>
+<script src="script.js?v=13"></script>
 <script src="music.js?v=2"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(e){ console.warn('SW gagal:', e); });
+  });
+}
+</script>
 </body>
 </html>

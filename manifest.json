@@ -1,6 +1,6 @@
 {
-  "name": "Buku Kas - Keuangan Pribadi",
-  "short_name": "Buku Kas",
+  "name": "Dompet ku - Keuangan Pribadi",
+  "short_name": "Dompet ku",
   "description": "Catat dan pantau keuangan pribadi: uang masuk, pembelian, tabungan, dan statistik.",
   "start_url": "./index.html",
   "scope": "./",

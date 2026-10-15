@@ -681,10 +681,37 @@ function renderBudgetStatistik(){
 /* ======================================================================
    SAVINGS GOALS (Target Tabungan)
    ====================================================================== */
+function goalSavedRaw(goalId, list){
+  // Saldo satu tabungan = menabung - diambil - dipakai bayar pembelian
+  const src = list || state.transactions;
+  let v = 0;
+  src.forEach(tx=>{
+    if(tx.goalId!==goalId) return;
+    const amt = Number(tx.amount)||0;
+    if(tx.type==='save') v += amt;
+    else if(tx.type==='withdraw') v -= amt;
+    else if(tx.type==='expense' && tx.account==='tabungan') v -= amt;
+  });
+  return v;
+}
 function computeGoalSaved(goalId){
-  const masuk = sumWhere(tx=>tx.type==='save' && tx.goalId===goalId);
-  const keluar = sumWhere(tx=>tx.type==='withdraw' && tx.goalId===goalId);
-  return Math.max(0, masuk - keluar);
+  return Math.max(0, goalSavedRaw(goalId));
+}
+function isNormalGoal(g){ return !!g && g.kind==='normal'; }
+function activeSavings(){ return state.goals.filter(g=> g.status!=='purchased'); }
+function computeUmumSaved(list){
+  // Tabungan Umum = total Tabungan dikurangi isi semua tabungan bernama yang aktif
+  const total = computeBalances(list).tabungan;
+  const inPots = activeSavings().reduce((sum,g)=> sum + Math.max(0, goalSavedRaw(g.id, list)), 0);
+  return total - inPots;
+}
+function savingOptionsHtml(selectedId, extraGoalId){
+  return state.goals
+    .filter(g=> g.status!=='purchased' || g.id===extraGoalId)
+    .map(g=>{
+      const label = escapeHtml(g.name) + (g.status==='purchased' ? '' : ' — ' + formatRupiah(computeGoalSaved(g.id)));
+      return `<option value="${g.id}" ${selectedId===g.id?'selected':''}>${label}</option>`;
+    }).join('');
 }
 function goalNameById(goalId){
   const g = state.goals.find(g=>g.id===goalId);
@@ -729,7 +756,10 @@ const TYPE_META = {
 function txSubLabel(tx){
   const accLabel = tx.account==='tabungan' ? 'Tabungan' : (ACCOUNT_MAP[tx.account]?.label || tx.account);
   if(tx.type==='income') return `${formatDateID(tx.date)} · Masuk ke ${accLabel}`;
-  if(tx.type==='expense') return `${formatDateID(tx.date)} · ${tx.category||'Lainnya'} · ${accLabel}`;
+  if(tx.type==='expense'){
+    const savTag = (tx.account==='tabungan' && tx.goalId) ? goalNameById(tx.goalId) : null;
+    return `${formatDateID(tx.date)} · ${tx.category||'Lainnya'} · ${accLabel}${savTag ? ' · 🎯 '+savTag : ''}`;
+  }
   if(tx.type==='save'){
     const goalTag = tx.goalId ? goalNameById(tx.goalId) : null;
     return `${formatDateID(tx.date)} · ${accLabel} → Tabungan${goalTag ? ' · 🎯 '+goalTag : ''}`;
@@ -1227,20 +1257,13 @@ document.getElementById('addGoalBtn').addEventListener('click', openAddGoal);
 function renderGoalList(){
   const wrap = document.getElementById('goalList');
   wrap.innerHTML = '';
-  if(state.goals.length===0){
-    wrap.innerHTML = '<div class="empty-state small">Belum ada target tabungan. Buat target pertamamu!</div>';
-    return;
-  }
   const activeGoals = state.goals.filter(g=> g.status!=='purchased');
   const purchasedGoals = state.goals.filter(g=> g.status==='purchased');
+  const umum = Math.max(0, computeUmumSaved());
 
-  if(activeGoals.length>0){
-    const label = document.createElement('div');
-    label.className = 'goal-section-label';
-    label.textContent = '🎯 Target Aktif';
-    wrap.appendChild(label);
-    activeGoals.forEach(goal=> wrap.appendChild(buildGoalCard(goal)));
-  }
+  activeGoals.forEach(goal=> wrap.appendChild(buildGoalCard(goal)));
+  if(umum>0) wrap.appendChild(buildUmumCard(umum));
+
   if(purchasedGoals.length>0){
     const label = document.createElement('div');
     label.className = 'goal-section-label';
@@ -1248,8 +1271,8 @@ function renderGoalList(){
     wrap.appendChild(label);
     purchasedGoals.slice().sort((a,b)=> (b.purchasedAt||0)-(a.purchasedAt||0)).forEach(goal=> wrap.appendChild(buildGoalCard(goal)));
   }
-  if(activeGoals.length===0 && purchasedGoals.length===0){
-    wrap.innerHTML = '<div class="empty-state small">Belum ada target tabungan. Buat target pertamamu!</div>';
+  if(activeGoals.length===0 && purchasedGoals.length===0 && umum<=0){
+    wrap.innerHTML = '<div class="empty-state small">Belum ada tabungan. Buat tabungan pertamamu!</div>';
   }
 }
 
@@ -1285,6 +1308,23 @@ function computeSavingsPlan(goal, saved){
   return plan;
 }
 
+function buildUmumCard(amount){
+  const card = document.createElement('div');
+  card.className = 'goal-card';
+  card.innerHTML = `
+    <div class="goal-card-head">
+      <div>
+        <div class="goal-name">Tabungan Umum</div>
+        <div class="goal-target">Tabungan tanpa nama</div>
+      </div>
+    </div>
+    <div class="goal-foot">
+      <span class="goal-saved">${formatBalance(amount)}</span>
+    </div>
+  `;
+  return card;
+}
+
 function buildGoalCard(goal){
   const isPurchased = goal.status==='purchased';
   const card = document.createElement('div');
@@ -1304,6 +1344,20 @@ function buildGoalCard(goal){
       <div class="goal-purchase-info">
         <div class="goal-purchase-row"><span>Uang digunakan</span><strong>-${formatBalance(goal.targetAmount)}</strong></div>
         <div class="goal-purchase-row"><span>Tanggal</span><strong>${formatDateID(goal.purchaseDate)}</strong></div>
+      </div>
+    `;
+  } else if(isNormalGoal(goal)){
+    const savedNormal = computeGoalSaved(goal.id);
+    card.innerHTML = `
+      <div class="goal-card-head">
+        <div>
+          <div class="goal-name">${escapeHtml(goal.name)}</div>
+          <div class="goal-target">Tabungan biasa</div>
+        </div>
+        <button class="goal-card-menu" data-goal-id="${goal.id}">⋮</button>
+      </div>
+      <div class="goal-foot">
+        <span class="goal-saved">${formatBalance(savedNormal)}</span>
       </div>
     `;
   } else {
@@ -1370,48 +1424,51 @@ function showInvalidDeadlineWarning(){
   document.getElementById('deadlineWarnOk').addEventListener('click', closePrompt);
 }
 
-function openAddGoal(){
-  showPrompt('Target Tabungan Baru', `
-    <div class="field"><label>Nama target</label><input id="goalNameInput" type="text" placeholder="Contoh: Beli Laptop" maxlength="40"></div>
-    <div class="field"><label>Nominal target (Rp)</label>
-      <div class="amount-input-row"><input id="goalAmountInput" type="number" min="1" placeholder="0"><button type="button" class="k-btn" id="goalAmountK">K</button></div>
-    </div>
-    <div class="field"><label>📅 Deadline Target (opsional)</label><input id="goalDeadlineInput" type="date"></div>
-    <button class="btn-primary" id="goalSaveBtn">Simpan</button>
-  `);
-  document.getElementById('goalAmountK').addEventListener('click', ()=>{
-    const inp = document.getElementById('goalAmountInput');
-    const digits = inp.value.replace(/[^0-9]/g,'');
-    if(!digits || digits==='0') return;
-    inp.value = digits + '000';
-    inp.focus();
-  });
-  document.getElementById('goalSaveBtn').addEventListener('click', ()=>{
-    const name = document.getElementById('goalNameInput').value.trim();
-    const amount = Number(document.getElementById('goalAmountInput').value);
-    const deadline = document.getElementById('goalDeadlineInput').value || null;
-    if(!name){ toast('Nama target tidak boleh kosong'); return; }
-    if(!amount || amount<=0){ toast('Nominal target harus lebih dari 0'); return; }
-    if(isDeadlineInPast(deadline)){ showInvalidDeadlineWarning(); return; }
-    state.goals.push({id:'goal_'+Date.now(), name, targetAmount:amount, createdAt:Date.now(), status:'active', deadline});
-    saveGoals();
-    closePrompt();
-    renderGoalList();
-    toast('Target tabungan dibuat');
-  });
+function openAddGoal(){ openGoalForm(null); }
+function openEditGoal(id){
+  const g = state.goals.find(g=>g.id===id);
+  if(g) openGoalForm(g);
 }
 
-function openEditGoal(id){
-  const goal = state.goals.find(g=>g.id===id);
-  if(!goal) return;
-  showPrompt('Edit Target Tabungan', `
-    <div class="field"><label>Nama target</label><input id="goalNameInput" type="text" value="${escapeHtml(goal.name)}" maxlength="40"></div>
-    <div class="field"><label>Nominal target (Rp)</label>
-      <div class="amount-input-row"><input id="goalAmountInput" type="number" min="1" value="${goal.targetAmount}"><button type="button" class="k-btn" id="goalAmountK">K</button></div>
+function openGoalForm(goal){
+  const isEdit = !!goal;
+  let kind = isEdit ? (isNormalGoal(goal) ? 'normal' : 'target') : 'normal';
+  const amountVal = (isEdit && !isNormalGoal(goal) && goal.targetAmount>0) ? goal.targetAmount : '';
+  showPrompt(isEdit ? 'Edit Tabungan' : 'Tabungan Baru', `
+    <div class="field"><label>Nama tabungan</label><input id="goalNameInput" type="text" placeholder="Contoh: Dana Darurat" maxlength="40" value="${isEdit ? escapeHtml(goal.name) : ''}"></div>
+    <div class="field"><label>Jenis tabungan</label>
+      <div class="view-toggle" id="goalKindToggle" style="margin-bottom:6px;">
+        <button type="button" class="view-toggle-btn" data-kind="target">🎯 Target</button>
+        <button type="button" class="view-toggle-btn" data-kind="normal">💰 Normal</button>
+      </div>
+      <div id="goalKindHint" style="color:var(--ink-soft); font-size:0.8rem;"></div>
     </div>
-    <div class="field"><label>📅 Deadline Target (opsional)</label><input id="goalDeadlineInput" type="date" value="${goal.deadline||''}"></div>
+    <div id="goalTargetFields">
+      <div class="field"><label>Nominal target (Rp)</label>
+        <div class="amount-input-row"><input id="goalAmountInput" type="number" min="1" placeholder="0" value="${amountVal}"><button type="button" class="k-btn" id="goalAmountK">K</button></div>
+      </div>
+      <div class="field"><label>📅 Deadline Target (opsional)</label><input id="goalDeadlineInput" type="date" value="${(isEdit && goal.deadline) ? goal.deadline : ''}"></div>
+    </div>
     <button class="btn-primary" id="goalSaveBtn">Simpan</button>
   `);
+
+  const targetFields = document.getElementById('goalTargetFields');
+  const hint = document.getElementById('goalKindHint');
+  function setKind(k){
+    kind = k;
+    document.querySelectorAll('#goalKindToggle .view-toggle-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.kind===k);
+    });
+    targetFields.classList.toggle('hidden', k!=='target');
+    hint.textContent = k==='target'
+      ? 'Ada nominal target, progress bar, dan deadline (opsional).'
+      : 'Tabungan bebas tanpa target nominal, cocok untuk dana darurat.';
+  }
+  document.querySelectorAll('#goalKindToggle .view-toggle-btn').forEach(b=>{
+    b.addEventListener('click', ()=> setKind(b.dataset.kind));
+  });
+  setKind(kind);
+
   document.getElementById('goalAmountK').addEventListener('click', ()=>{
     const inp = document.getElementById('goalAmountInput');
     const digits = inp.value.replace(/[^0-9]/g,'');
@@ -1419,20 +1476,35 @@ function openEditGoal(id){
     inp.value = digits + '000';
     inp.focus();
   });
+
   document.getElementById('goalSaveBtn').addEventListener('click', ()=>{
     const name = document.getElementById('goalNameInput').value.trim();
-    const amount = Number(document.getElementById('goalAmountInput').value);
-    const deadline = document.getElementById('goalDeadlineInput').value || null;
-    if(!name){ toast('Nama target tidak boleh kosong'); return; }
-    if(!amount || amount<=0){ toast('Nominal target harus lebih dari 0'); return; }
-    if(isDeadlineInPast(deadline)){ showInvalidDeadlineWarning(); return; }
-    goal.name = name;
-    goal.targetAmount = amount;
-    goal.deadline = deadline;
+    if(!name){ toast('Nama tabungan tidak boleh kosong'); return; }
+    const lower = name.toLowerCase();
+    const duplicate = lower==='tabungan umum' || state.goals.some(g=>
+      g.status!=='purchased' && (!isEdit || g.id!==goal.id) && g.name.trim().toLowerCase()===lower);
+    if(duplicate){ toast('Nama tabungan sudah dipakai'); return; }
+
+    let amount = 0, deadline = null;
+    if(kind==='target'){
+      amount = Number(document.getElementById('goalAmountInput').value);
+      deadline = document.getElementById('goalDeadlineInput').value || null;
+      if(!amount || amount<=0){ toast('Nominal target harus lebih dari 0'); return; }
+      if(isDeadlineInPast(deadline) && !(isEdit && goal.deadline===deadline)){ showInvalidDeadlineWarning(); return; }
+    }
+
+    if(isEdit){
+      goal.name = name;
+      goal.kind = kind;
+      goal.targetAmount = amount;
+      goal.deadline = deadline;
+    } else {
+      state.goals.push({id:'goal_'+Date.now(), name, kind, targetAmount:amount, createdAt:Date.now(), status:'active', deadline});
+    }
     saveGoals();
     closePrompt();
     renderGoalList();
-    toast('Target tabungan diperbarui');
+    toast(isEdit ? 'Tabungan diperbarui' : 'Tabungan dibuat');
   });
 }
 
@@ -1448,10 +1520,13 @@ function openGoalMenu(id){
     return;
   }
   const saved = computeGoalSaved(id);
+  const menuInfo = isNormalGoal(goal)
+    ? `Saldo ${formatRupiah(saved)}`
+    : `Terkumpul ${formatRupiah(saved)} dari target ${formatRupiah(goal.targetAmount)}`;
   showPrompt(goal.name, `
-    <p><span style="color:var(--ink-soft); font-size:0.85rem;">Terkumpul ${formatRupiah(saved)} dari target ${formatRupiah(goal.targetAmount)}</span></p>
-    <button class="btn-secondary" id="goalEditBtn">✏️ Edit Target</button>
-    <button class="btn-primary danger" id="goalDelBtn">🗑️ Hapus Target</button>
+    <p><span style="color:var(--ink-soft); font-size:0.85rem;">${menuInfo}</span></p>
+    <button class="btn-secondary" id="goalEditBtn">✏️ Edit Tabungan</button>
+    <button class="btn-primary danger" id="goalDelBtn">🗑️ Hapus Tabungan</button>
   `);
   document.getElementById('goalEditBtn').addEventListener('click', ()=>{
     closePrompt();
@@ -1459,8 +1534,8 @@ function openGoalMenu(id){
   });
   document.getElementById('goalDelBtn').addEventListener('click', ()=>{
     closePrompt();
-    showPrompt('Hapus Target Tabungan', `
-      <p>Hapus target "${escapeHtml(goal.name)}"? Uang yang sudah ditabung tetap aman di Tabungan, hanya label targetnya yang hilang.</p>
+    showPrompt('Hapus Tabungan', `
+      <p>Hapus tabungan "${escapeHtml(goal.name)}"? ${saved>0 ? 'Saldo ' + formatRupiah(saved) + ' tidak hilang, otomatis pindah ke Tabungan Umum.' : 'Tabungan ini masih kosong.'}</p>
       <button class="btn-primary danger" id="goalDelConfirm">Ya, Hapus</button>
       <button class="btn-secondary" id="goalDelCancel">Batal</button>
     `);
@@ -1469,7 +1544,7 @@ function openGoalMenu(id){
       saveGoals();
       closePrompt();
       renderGoalList();
-      toast('Target tabungan dihapus');
+      toast('Tabungan dihapus');
     });
     document.getElementById('goalDelCancel').addEventListener('click', closePrompt);
   });
@@ -1619,7 +1694,7 @@ function accountPickerHtml(name, options, selected){
   }).join('');
   return `<div class="account-pick" data-picker="${name}">${cols}</div>`;
 }
-function wirePicker(root, name){
+function wirePicker(root, name, onChange){
   const picker = root.querySelector(`[data-picker="${name}"]`);
   if(!picker) return {get:()=>null};
   let value = picker.querySelector('.account-opt.active')?.dataset.val || null;
@@ -1628,6 +1703,7 @@ function wirePicker(root, name){
       picker.querySelectorAll('.account-opt').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       value = btn.dataset.val;
+      if(typeof onChange==='function') onChange(value);
     });
   });
   return {get:()=>value};
@@ -1657,29 +1733,35 @@ function openTxModal(type, existingTx){
       <div class="field"><label>Harga (Rp)</label><div class="amount-input-row"><input required type="number" min="1" id="fAmount" placeholder="0" value="${existingTx?existingTx.amount:''}"><button type="button" class="k-btn" id="fAmountK">K</button></div></div>
       <div class="field"><label>Tanggal</label><input required type="date" id="fDate" value="${existingTx?existingTx.date:todayISO()}"></div>
       <div class="field"><label>Tempat uang diambil</label>${accountPickerHtml('acc', accountOptsFull, existingTx?existingTx.account:'dana')}</div>
+      ${activeSavings().length>0 || (existingTx && existingTx.goalId) ? `
+      <div class="field${existingTx && existingTx.account==='tabungan' ? '' : ' hidden'}" id="fSavingField">
+        <label>Pakai tabungan yang mana?</label>
+        <select id="fGoal"><option value="">Tabungan Umum — ${formatRupiah(Math.max(0, computeUmumSaved(state.transactions.filter(t=>!existingTx || t.id!==existingTx.id))))}</option>${savingOptionsHtml(existingTx?existingTx.goalId:null, existingTx?existingTx.goalId:null)}</select>
+        <div id="fSavingWarn" class="hidden" style="color:var(--ink-soft); font-size:0.8rem; margin-top:6px;">⚠️ Tabungan ini punya target. Memakainya akan mengurangi progres targetnya.</div>
+      </div>` : ''}
       <div class="field"><label>Kategori</label><select id="fCategory">${catOptions}</select></div>
       <div class="field"><label>Catatan (opsional)</label><textarea id="fExtra" rows="2" placeholder="Catatan tambahan">${existingTx&&existingTx.extra?escapeHtml(existingTx.extra):''}</textarea></div>
       <button type="submit" class="btn-primary">Simpan</button>
     `;
   } else if(type==='save'){
     const selectableGoals = state.goals.filter(g=> g.status!=='purchased' || (existingTx && existingTx.goalId===g.id));
-    const goalOptions = selectableGoals.map(g=>`<option value="${g.id}" ${existingTx&&existingTx.goalId===g.id?'selected':''}>${escapeHtml(g.name)}</option>`).join('');
+    const goalOptions = savingOptionsHtml(existingTx?existingTx.goalId:null, existingTx?existingTx.goalId:null);
     html = `
       <div class="field"><label>Nominal (Rp)</label><div class="amount-input-row"><input required type="number" min="1" id="fAmount" placeholder="0" value="${existingTx?existingTx.amount:''}"><button type="button" class="k-btn" id="fAmountK">K</button></div></div>
       <div class="field"><label>Sumber uang</label>${accountPickerHtml('acc', walletOnlyOpts, existingTx?existingTx.account:'dana')}</div>
       <div class="field"><label>Tanggal</label><input required type="date" id="fDate" value="${existingTx?existingTx.date:todayISO()}"></div>
       <div class="field"><label>Keterangan (opsional)</label><input type="text" id="fNote" placeholder="Contoh: Tabungan liburan" value="${existingTx?escapeHtml(existingTx.note):''}"></div>
-      ${selectableGoals.length>0 ? `<div class="field"><label>Target Tabungan (opsional)</label><select id="fGoal"><option value="">— Tidak terikat target —</option>${goalOptions}</select></div>` : ''}
+      ${selectableGoals.length>0 ? `<div class="field"><label>Menabung ke</label><select id="fGoal"><option value="">Tabungan Umum</option>${goalOptions}</select></div>` : ''}
       <button type="submit" class="btn-primary">Simpan</button>
     `;
   } else if(type==='withdraw'){
-    const goalOptions = state.goals.map(g=>`<option value="${g.id}" ${existingTx&&existingTx.goalId===g.id?'selected':''}>${escapeHtml(g.name)}</option>`).join('');
+    const goalOptions = savingOptionsHtml(existingTx?existingTx.goalId:null, existingTx?existingTx.goalId:null);
     html = `
       <div class="field"><label>Nominal (Rp)</label><div class="amount-input-row"><input required type="number" min="1" id="fAmount" placeholder="0" value="${existingTx?existingTx.amount:''}"><button type="button" class="k-btn" id="fAmountK">K</button></div></div>
       <div class="field"><label>Tujuan uang</label>${accountPickerHtml('acc', walletOnlyOpts, existingTx?existingTx.account:'dana')}</div>
       <div class="field"><label>Tanggal</label><input required type="date" id="fDate" value="${existingTx?existingTx.date:todayISO()}"></div>
       <div class="field"><label>Keterangan (opsional)</label><input type="text" id="fNote" placeholder="Contoh: Ambil untuk kebutuhan" value="${existingTx?escapeHtml(existingTx.note):''}"></div>
-      ${state.goals.length>0 ? `<div class="field"><label>Target Tabungan (opsional)</label><select id="fGoal"><option value="">— Tidak terikat target —</option>${goalOptions}</select></div>` : ''}
+      ${goalOptions ? `<div class="field"><label>Ambil dari tabungan</label><select id="fGoal"><option value="">Tabungan Umum</option>${goalOptions}</select></div>` : ''}
       <button type="submit" class="btn-primary">Simpan</button>
     `;
   } else if(type==='transfer'){
@@ -1693,7 +1775,24 @@ function openTxModal(type, existingTx){
     `;
   }
   txForm.innerHTML = html;
-  const picker = type==='transfer' ? null : wirePicker(txForm, 'acc');
+  let picker = null;
+  const syncSavingField = ()=>{
+    if(type!=='expense') return;
+    const field = document.getElementById('fSavingField');
+    if(!field) return;
+    const isSav = !!picker && picker.get()==='tabungan';
+    field.classList.toggle('hidden', !isSav);
+    const sel = document.getElementById('fGoal');
+    const warn = document.getElementById('fSavingWarn');
+    const g = (sel && sel.value) ? state.goals.find(x=>x.id===sel.value) : null;
+    if(warn) warn.classList.toggle('hidden', !(isSav && g && !isNormalGoal(g)));
+  };
+  picker = type==='transfer' ? null : wirePicker(txForm, 'acc', syncSavingField);
+  if(type==='expense'){
+    const savSel = document.getElementById('fGoal');
+    if(savSel) savSel.addEventListener('change', syncSavingField);
+    syncSavingField();
+  }
   const pickerFrom = type==='transfer' ? wirePicker(txForm, 'accFrom') : null;
   const pickerTo = type==='transfer' ? wirePicker(txForm, 'accTo') : null;
   const kBtn = document.getElementById('fAmountK');
@@ -1731,6 +1830,8 @@ function openTxModal(type, existingTx){
         tx.note = document.getElementById('fNote').value.trim() || 'Pembelian';
         tx.category = document.getElementById('fCategory').value;
         tx.extra = document.getElementById('fExtra').value.trim();
+        const savSel = document.getElementById('fGoal');
+        tx.goalId = (account==='tabungan' && savSel && savSel.value) ? savSel.value : null;
       } else {
         tx.note = document.getElementById('fNote').value.trim();
         if(type==='save' || type==='withdraw'){
@@ -1927,17 +2028,34 @@ function closePrompt(){
 /* ======================================================================
    BALANCE VALIDATION (mencegah saldo negatif)
    ====================================================================== */
+let insufficientReason = null;
 function wouldCauseNegativeBalance(candidateTx, excludeTxId){
+  insufficientReason = null;
   const virtualList = state.transactions
     .filter(t=> t.id !== excludeTxId)
     .concat([candidateTx]);
   const bal = computeBalances(virtualList);
   const EPS = -1; // toleransi pembulatan kecil
-  return Object.values(bal).some(v=> v < EPS);
+  if(Object.values(bal).some(v=> v < EPS)) return true;
+  // Cek saldo tabungan yang dipilih (tabungan bernama atau Tabungan Umum)
+  const takesFromSavings = candidateTx.type==='withdraw' || (candidateTx.type==='expense' && candidateTx.account==='tabungan');
+  if(takesFromSavings){
+    const pot = candidateTx.goalId ? state.goals.find(g=> g.id===candidateTx.goalId && g.status!=='purchased') : null;
+    if(pot){
+      if(goalSavedRaw(pot.id, virtualList) < EPS){
+        insufficientReason = `Saldo tabungan "${pot.name}" tidak cukup untuk transaksi ini.`;
+        return true;
+      }
+    } else if(computeUmumSaved(virtualList) < EPS){
+      insufficientReason = 'Saldo Tabungan Umum tidak cukup. Pilih tabungan lain yang saldonya cukup.';
+      return true;
+    }
+  }
+  return false;
 }
 function showInsufficientBalanceWarning(){
   showPrompt('⚠️ Saldo Tidak Cukup', `
-    <p>Saldo Anda tidak cukup untuk melakukan transaksi ini.</p>
+    <p>${insufficientReason ? escapeHtml(insufficientReason) : 'Saldo Anda tidak cukup untuk melakukan transaksi ini.'}</p>
     <button class="btn-primary" id="insufficientOkBtn">Oke</button>
   `);
   document.getElementById('insufficientOkBtn').addEventListener('click', closePrompt);
@@ -2050,7 +2168,7 @@ function showLockScreen(mode){
   pinMode = mode || 'unlock';
   pinBuffer = '';
   pinError.textContent = '';
-  document.querySelector('.lock-card h1').textContent = pinMode==='unlock' ? 'Buku Kas Terkunci' : 'Atur PIN Baru';
+  document.querySelector('.lock-card h1').textContent = pinMode==='unlock' ? 'Dompet ku Terkunci' : 'Atur PIN Baru';
   document.querySelector('.lock-card p').textContent = pinMode==='unlock' ? 'Masukkan PIN untuk membuka' : `Buat PIN ${NEW_PIN_LENGTH} digit`;
   renderPinDots();
   lockScreen.classList.remove('hidden');
