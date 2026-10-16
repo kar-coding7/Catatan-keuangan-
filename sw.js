@@ -1,6 +1,6 @@
 /* Service Worker — Dompet ku (offline).
    Setiap ubah file aplikasi, naikkan CACHE_VERSION agar pengguna dapat versi baru. */
-const CACHE_VERSION = 'dompetku-v2';
+const CACHE_VERSION = 'dompetku-v3';
 const APP_FILES = [
   './',
   './index.html',
