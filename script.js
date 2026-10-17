@@ -12,6 +12,8 @@ const LS_SOUND = 'kp_sound_v1';
 const LS_ACHIEVEMENTS = 'kp_achievements_v1';
 const LS_THEME = 'kp_theme_v1';
 const LS_BUDGETS = 'kp_budgets_v1';
+const LS_POS = 'kp_pos_v1';
+const LS_LASTPOS = 'kp_lastpos_v1';
 
 const DEFAULT_CATEGORIES = ['Makanan','Minuman','Transportasi','Pendidikan','Teknologi','Hiburan','Pakaian','Kesehatan','Keperluan pribadi','Lainnya'];
 
@@ -62,6 +64,7 @@ const state = {
   calendarYear: new Date().getFullYear(),
   calendarMonth: new Date().getMonth(),
   budgets: [],
+  pos: [],
   budgetMonth: new Date().getMonth()+1,
   budgetYear: new Date().getFullYear(),
 };
@@ -98,6 +101,8 @@ function loadData(){
   try{ state.achievements = JSON.parse(localStorage.getItem(LS_ACHIEVEMENTS)) || []; }catch(e){ state.achievements = []; }
   try{ state.theme = localStorage.getItem(LS_THEME) || 'light'; }catch(e){ state.theme = 'light'; }
   try{ state.budgets = JSON.parse(localStorage.getItem(LS_BUDGETS)) || []; }catch(e){ state.budgets = []; }
+  try{ state.pos = JSON.parse(localStorage.getItem(LS_POS)) || []; }catch(e){ state.pos = []; }
+  if(!Array.isArray(state.pos)) state.pos = [];
 }
 
 function saveTransactions(){ localStorage.setItem(LS_TX, JSON.stringify(state.transactions)); }
@@ -107,6 +112,7 @@ function saveGoals(){ localStorage.setItem(LS_GOALS, JSON.stringify(state.goals)
 function saveAccounts(){ localStorage.setItem(LS_ACCOUNTS, JSON.stringify(customAccounts)); }
 function saveAchievements(){ localStorage.setItem(LS_ACHIEVEMENTS, JSON.stringify(state.achievements)); }
 function saveBudgets(){ localStorage.setItem(LS_BUDGETS, JSON.stringify(state.budgets)); }
+function savePos(){ localStorage.setItem(LS_POS, JSON.stringify(state.pos)); }
 function formatBalance(amount) {
   if (state.hideBalance) return '••••';
   return formatRupiah(amount);
@@ -276,6 +282,7 @@ function computeBalances(list){
     else if(tx.type==='withdraw'){ acc[tx.account]+=amt; acc.tabungan-=amt; }
     else if(tx.type==='transfer'){ acc[tx.account]-=amt; if(tx.toAccount in acc) acc[tx.toAccount]+=amt; }
     else if(tx.type==='goal_purchase'){ acc.tabungan-=amt; }
+    else if(tx.type==='pot_transfer'){ /* total Tabungan tidak berubah, hanya isi per tabungan */ }
     else if(tx.type==='opening'){ acc[tx.account]+=amt; }
   });
   return acc;
@@ -307,6 +314,7 @@ function computeAccountStats(key){
       {label:'Total masuk ke Tabungan', value: masuk},
       {label:'Total keluar dari Tabungan', value: keluar},
       {label:'Dipakai untuk Target Tabungan', value: dipakaiTarget},
+      {label:'Dipindah antar tabungan', value: sumWhere(tx=>tx.type==='pot_transfer')},
     ];
   }
   const masuk = sumWhere(tx=>tx.type==='income' && tx.account===key);
@@ -686,8 +694,13 @@ function goalSavedRaw(goalId, list){
   const src = list || state.transactions;
   let v = 0;
   src.forEach(tx=>{
-    if(tx.goalId!==goalId) return;
     const amt = Number(tx.amount)||0;
+    if(tx.type==='pot_transfer'){
+      if((tx.goalId||null)===goalId) v -= amt;
+      if((tx.toGoalId||null)===goalId) v += amt;
+      return;
+    }
+    if(tx.goalId!==goalId) return;
     if(tx.type==='save') v += amt;
     else if(tx.type==='withdraw') v -= amt;
     else if(tx.type==='expense' && tx.account==='tabungan') v -= amt;
@@ -750,6 +763,7 @@ const TYPE_META = {
   withdraw: {icon:'🟠', cls:'withdraw', amtCls:'neutral', sign:'',  label:'Ambil Tabungan'},
   transfer: {icon:'🔁', cls:'transfer', amtCls:'neutral', sign:'',  label:'Pindah Uang'},
   goal_purchase: {icon:'📦', cls:'goal-purchase', amtCls:'neg', sign:'-', label:'Target Tabungan'},
+  pot_transfer: {icon:'🔁', cls:'transfer', amtCls:'neutral', sign:'', label:'Pindah Tabungan'},
   opening:  {icon:'🏁', cls:'transfer', amtCls:'pos', sign:'+', label:'Saldo Awal'},
 };
 
@@ -758,7 +772,8 @@ function txSubLabel(tx){
   if(tx.type==='income') return `${formatDateID(tx.date)} · Masuk ke ${accLabel}`;
   if(tx.type==='expense'){
     const savTag = (tx.account==='tabungan' && tx.goalId) ? goalNameById(tx.goalId) : null;
-    return `${formatDateID(tx.date)} · ${tx.category||'Lainnya'} · ${accLabel}${savTag ? ' · 🎯 '+savTag : ''}`;
+    const posName = tx.posId ? posNameById(tx.posId) : null;
+    return `${formatDateID(tx.date)} · ${tx.category||'Lainnya'} · ${accLabel}${savTag ? ' · 🎯 '+savTag : ''}${posName ? ' · 🏷️ '+escapeHtml(posName) : ''}`;
   }
   if(tx.type==='save'){
     const goalTag = tx.goalId ? goalNameById(tx.goalId) : null;
@@ -772,6 +787,7 @@ function txSubLabel(tx){
     const toLabel = ACCOUNT_MAP[tx.toAccount]?.label || tx.toAccount;
     return `${formatDateID(tx.date)} · ${accLabel} → ${toLabel}`;
   }
+  if(tx.type==='pot_transfer') return `${formatDateID(tx.date)} · 🎯 ${escapeHtml(goalNameById(tx.goalId) || 'Tabungan Umum')} → ${escapeHtml(goalNameById(tx.toGoalId) || 'Tabungan Umum')}`;
   if(tx.type==='goal_purchase') return `${formatDateID(tx.date)} · 📦 Target Tabungan · Sudah Dibeli`;
   if(tx.type==='opening') return `${formatDateID(tx.date)} · Saldo awal · ${accLabel}`;
   return formatDateID(tx.date);
@@ -783,6 +799,7 @@ function txName(tx){
   if(tx.type==='withdraw') return tx.note || 'Ambil dari Tabungan';
   if(tx.type==='transfer') return tx.note || 'Pindah uang';
   if(tx.type==='goal_purchase') return tx.note || 'Target Tabungan';
+  if(tx.type==='pot_transfer') return tx.note || 'Pindah tabungan';
   if(tx.type==='opening') return tx.note || 'Saldo awal';
   return tx.note||'';
 }
@@ -861,6 +878,7 @@ function renderDashboard(){
   }
 
   renderBudgetDashboardSummary();
+  renderPosDashboardSummary();
 
   const recent = [...state.transactions]
     .sort((a,b)=> (b.date+b.createdAt) > (a.date+a.createdAt) ? 1 : -1)
@@ -899,7 +917,7 @@ document.getElementById('searchInput').addEventListener('input', (e)=>{
 function renderHistory(){
   const f = state.historyFilters;
   const list = state.transactions.filter(tx=>{
-    if(f.type!=='all' && tx.type!==f.type) return false;
+    if(f.type!=='all' && tx.type!==f.type && !(f.type==='transfer' && tx.type==='pot_transfer')) return false;
     if(f.account!=='all'){
       const belongs = f.account==='tabungan'
         ? (tx.account==='tabungan' || tx.type==='save' || tx.type==='withdraw')
@@ -1178,6 +1196,7 @@ function renderUang(){
   savingsWrap.appendChild(savingsCard);
 
   renderGoalList();
+  renderPosList();
   renderCategoryList();
 }
 function renderCategoryList(){
@@ -1711,6 +1730,7 @@ function wirePicker(root, name, onChange){
 
 function openTxModal(type, existingTx){
   state.editingTxId = existingTx ? existingTx.id : null;
+  if(type==='pot_transfer') type = 'transfer'; // Pindah Tabungan diedit lewat form Pindah Uang
   const titles = {income:'💰 Uang Masuk', expense:'🛒 Pembelian', save:'🎯 Menabung', withdraw:'🔓 Ambil dari Tabungan', transfer:'🔁 Pindah Uang'};
   modalTitle.textContent = titles[type];
 
@@ -1728,6 +1748,13 @@ function openTxModal(type, existingTx){
     `;
   } else if(type==='expense'){
     const catOptions = state.categories.map(c=>`<option value="${escapeHtml(c.name)}" ${existingTx&&existingTx.category===c.name?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+    const posListForForm = state.transactions.filter(t=>!existingTx || t.id!==existingTx.id);
+    const posPicked = existingTx ? (existingTx.posId || '') : getLastPos();
+    const posOpts = state.pos.map(p=>{
+      const label = p.unlimited ? `${escapeHtml(p.name)} — tanpa batas` : `${escapeHtml(p.name)} — sisa ${formatRupiah(p.amount - computePosUsed(p, posListForForm))}`;
+      return `<option value="${p.id}" ${posPicked===p.id?'selected':''}>${label}</option>`;
+    }).join('');
+    const posFieldHtml = state.pos.length>0 ? `<div class="field"><label>Pos (opsional)</label><select id="fPos"><option value="">Tanpa pos</option>${posOpts}</select></div>` : '';
     html = `
       <div class="field"><label>Nama barang</label><input required type="text" id="fNote" placeholder="Contoh: Makan siang" value="${existingTx?escapeHtml(existingTx.note):''}"></div>
       <div class="field"><label>Harga (Rp)</label><div class="amount-input-row"><input required type="number" min="1" id="fAmount" placeholder="0" value="${existingTx?existingTx.amount:''}"><button type="button" class="k-btn" id="fAmountK">K</button></div></div>
@@ -1740,6 +1767,7 @@ function openTxModal(type, existingTx){
         <div id="fSavingWarn" class="hidden" style="color:var(--ink-soft); font-size:0.8rem; margin-top:6px;">⚠️ Tabungan ini punya target. Memakainya akan mengurangi progres targetnya.</div>
       </div>` : ''}
       <div class="field"><label>Kategori</label><select id="fCategory">${catOptions}</select></div>
+      ${posFieldHtml}
       <div class="field"><label>Catatan (opsional)</label><textarea id="fExtra" rows="2" placeholder="Catatan tambahan">${existingTx&&existingTx.extra?escapeHtml(existingTx.extra):''}</textarea></div>
       <button type="submit" class="btn-primary">Simpan</button>
     `;
@@ -1765,10 +1793,27 @@ function openTxModal(type, existingTx){
       <button type="submit" class="btn-primary">Simpan</button>
     `;
   } else if(type==='transfer'){
+    const isPot = !!existingTx && existingTx.type==='pot_transfer';
+    const fromSel = isPot ? 'tabungan' : (existingTx ? existingTx.account : 'fisik');
+    const toSel = isPot ? 'tabungan' : (existingTx ? existingTx.toAccount : 'dana');
+    const fromGoalId = isPot ? (existingTx.goalId || null) : null;
+    const toGoalId = isPot ? (existingTx.toGoalId || null) : null;
+    const umumNow = Math.max(0, computeUmumSaved(state.transactions.filter(t=>!existingTx || t.id!==existingTx.id)));
+    const umumOpt = `<option value="">Tabungan Umum — ${formatRupiah(umumNow)}</option>`;
     html = `
       <div class="field"><label>Nominal (Rp)</label><div class="amount-input-row"><input required type="number" min="1" id="fAmount" placeholder="0" value="${existingTx?existingTx.amount:''}"><button type="button" class="k-btn" id="fAmountK">K</button></div></div>
-      <div class="field"><label>Dari dompet</label>${accountPickerHtml('accFrom', walletOnlyOpts, existingTx?existingTx.account:'fisik')}</div>
-      <div class="field"><label>Ke dompet</label>${accountPickerHtml('accTo', walletOnlyOpts, existingTx?existingTx.toAccount:'dana')}</div>
+      <div class="field"><label>Dari</label>${accountPickerHtml('accFrom', accountOptsFull, fromSel)}</div>
+      <div class="field hidden" id="fFromSaving">
+        <label>Dari tabungan yang mana?</label>
+        <select id="fGoalFrom">${umumOpt}${savingOptionsHtml(fromGoalId, fromGoalId)}</select>
+        <div id="fFromWarn" class="hidden" style="color:var(--ink-soft); font-size:0.8rem; margin-top:6px;">⚠️ Tabungan ini punya target. Memindahkannya akan mengurangi progres targetnya.</div>
+      </div>
+      <div class="field"><label>Ke</label>${accountPickerHtml('accTo', accountOptsFull, toSel)}</div>
+      <div class="field hidden" id="fToSaving">
+        <label>Ke tabungan yang mana?</label>
+        <select id="fGoalTo">${umumOpt}${savingOptionsHtml(toGoalId, toGoalId)}</select>
+      </div>
+      <div id="fTransferHint" class="hidden" style="color:var(--ink-soft); font-size:0.82rem; margin:-4px 0 10px;">⚠️ Dompet → Tabungan tidak bisa di sini. Untuk menabung, pakai tombol Nabung.</div>
       <div class="field"><label>Tanggal</label><input required type="date" id="fDate" value="${existingTx?existingTx.date:todayISO()}"></div>
       <div class="field"><label>Keterangan (opsional)</label><input type="text" id="fNote" placeholder="Contoh: Simpan uang tunai ke Dana" value="${existingTx?escapeHtml(existingTx.note):''}"></div>
       <button type="submit" class="btn-primary">Simpan</button>
@@ -1793,8 +1838,22 @@ function openTxModal(type, existingTx){
     if(savSel) savSel.addEventListener('change', syncSavingField);
     syncSavingField();
   }
-  const pickerFrom = type==='transfer' ? wirePicker(txForm, 'accFrom') : null;
-  const pickerTo = type==='transfer' ? wirePicker(txForm, 'accTo') : null;
+  let pickerFrom = null, pickerTo = null;
+  if(type==='transfer'){
+    const syncTransfer = ()=>{
+      const fromV = pickerFrom.get(), toV = pickerTo.get();
+      document.getElementById('fFromSaving').classList.toggle('hidden', fromV!=='tabungan');
+      document.getElementById('fToSaving').classList.toggle('hidden', toV!=='tabungan');
+      const gSel = document.getElementById('fGoalFrom');
+      const g = (gSel && gSel.value) ? state.goals.find(x=>x.id===gSel.value) : null;
+      document.getElementById('fFromWarn').classList.toggle('hidden', !(fromV==='tabungan' && g && !isNormalGoal(g)));
+      document.getElementById('fTransferHint').classList.toggle('hidden', !(toV==='tabungan' && fromV && fromV!=='tabungan'));
+    };
+    pickerFrom = wirePicker(txForm, 'accFrom', syncTransfer);
+    pickerTo = wirePicker(txForm, 'accTo', syncTransfer);
+    document.getElementById('fGoalFrom').addEventListener('change', syncTransfer);
+    syncTransfer();
+  }
   const kBtn = document.getElementById('fAmountK');
   if(kBtn){
     kBtn.addEventListener('click', ()=>{
@@ -1818,10 +1877,30 @@ function openTxModal(type, existingTx){
     if(type==='transfer'){
       const fromAcc = pickerFrom.get();
       const toAcc = pickerTo.get();
-      if(!fromAcc || !toAcc){ toast('Pilih dompet asal dan tujuan'); return; }
-      if(fromAcc===toAcc){ toast('Dompet asal dan tujuan tidak boleh sama'); return; }
-      tx = {type, amount, date, account:fromAcc, toAccount:toAcc};
-      tx.note = document.getElementById('fNote').value.trim();
+      if(!fromAcc || !toAcc){ toast('Pilih asal dan tujuan'); return; }
+      const note = document.getElementById('fNote').value.trim();
+      if(toAcc==='tabungan' && fromAcc!=='tabungan'){
+        showPrompt('⚠️ Tidak Bisa Dipindah', `
+          <p>Memindahkan uang dari dompet ke tabungan tidak bisa lewat Pindah Uang. Gunakan tombol <strong>Nabung</strong> untuk memasukkan uang ke tabungan.</p>
+          <button class="btn-primary" id="goNabungBtn">Buka Nabung</button>
+          <button class="btn-secondary" id="goNabungCancel">Tutup</button>
+        `);
+        document.getElementById('goNabungBtn').addEventListener('click', ()=>{ closePrompt(); closeTxModal(); openTxModal('save'); });
+        document.getElementById('goNabungCancel').addEventListener('click', closePrompt);
+        return;
+      }
+      if(fromAcc==='tabungan' && toAcc==='tabungan'){
+        const fg = document.getElementById('fGoalFrom').value || null;
+        const tg = document.getElementById('fGoalTo').value || null;
+        if(fg===tg){ toast('Tabungan asal dan tujuan tidak boleh sama'); return; }
+        tx = {type:'pot_transfer', amount, date, account:'tabungan', goalId:fg, toGoalId:tg, note};
+      } else if(fromAcc==='tabungan'){
+        const fg = document.getElementById('fGoalFrom').value || null;
+        tx = {type:'withdraw', amount, date, account:toAcc, goalId:fg, note};
+      } else {
+        if(fromAcc===toAcc){ toast('Dompet asal dan tujuan tidak boleh sama'); return; }
+        tx = {type:'transfer', amount, date, account:fromAcc, toAccount:toAcc, note};
+      }
     } else {
       const account = picker.get();
       if(!account){ toast('Pilih tempat uang'); return; }
@@ -1832,6 +1911,9 @@ function openTxModal(type, existingTx){
         tx.extra = document.getElementById('fExtra').value.trim();
         const savSel = document.getElementById('fGoal');
         tx.goalId = (account==='tabungan' && savSel && savSel.value) ? savSel.value : null;
+        const posSel = document.getElementById('fPos');
+        tx.posId = (posSel && posSel.value) ? posSel.value : null;
+        if(posSel && !state.editingTxId) setLastPos(posSel.value);
       } else {
         tx.note = document.getElementById('fNote').value.trim();
         if(type==='save' || type==='withdraw'){
@@ -1851,10 +1933,11 @@ function openTxModal(type, existingTx){
 
     txForm.dataset.submitting = '1';
     let goalNotifyMsg = null;
-    if(type==='save' && tx.goalId && !state.editingTxId){
-      const goal = state.goals.find(g=>g.id===tx.goalId);
+    const notifyGoalId = type==='save' ? tx.goalId : (tx.type==='pot_transfer' ? tx.toGoalId : null);
+    if(notifyGoalId && !state.editingTxId){
+      const goal = state.goals.find(g=>g.id===notifyGoalId);
       if(goal && goal.targetAmount>0){
-        const before = computeGoalSaved(tx.goalId);
+        const before = computeGoalSaved(notifyGoalId);
         const after = before + amount;
         const beforePct = before / goal.targetAmount * 100;
         const afterPct = after / goal.targetAmount * 100;
@@ -1889,13 +1972,30 @@ function openTxModal(type, existingTx){
       }
     }
 
+    let posWarnInfo = null;
+    if(type==='expense' && !state.editingTxId && tx.posId){
+      const pos = posById(tx.posId);
+      const dd = new Date(date+'T00:00:00');
+      const nowD = new Date();
+      if(pos && !pos.unlimited && pos.amount>0 && dd.getFullYear()===nowD.getFullYear() && dd.getMonth()===nowD.getMonth()){
+        const before = computePosUsed(pos);
+        const after = before + amount;
+        if(before<=pos.amount && after>pos.amount){
+          posWarnInfo = {level:'over', pos, used:after};
+        } else if(posPercentLeft(pos, before)>=25 && posPercentLeft(pos, after)<25 && after<=pos.amount){
+          posWarnInfo = {level:'low', pos, used:after};
+        }
+      }
+    }
+
     if(state.editingTxId){
-      updateTransaction(state.editingTxId, tx);
+      if(type==='transfer') replaceTransaction(state.editingTxId, tx); else updateTransaction(state.editingTxId, tx);
       toast('Transaksi diperbarui');
     } else {
       addTransaction(tx);
-      playSound(type);
-      showSuccessBurst(type);
+      const fxKind = tx.type==='pot_transfer' ? 'transfer' : tx.type;
+      playSound(fxKind);
+      showSuccessBurst(fxKind);
       toast(goalNotifyMsg || 'Transaksi tersimpan');
       if(goalNotifyMsg && goalNotifyMsg.indexOf('tercapai')>-1){
         setTimeout(()=>{ playSound('goal'); launchConfetti(); checkAchievements(); }, 380);
@@ -1905,10 +2005,236 @@ function openTxModal(type, existingTx){
       if(budgetWarningInfo){
         setTimeout(()=> showBudgetWarning(budgetWarningInfo), 500);
       }
+      if(posWarnInfo){
+        setTimeout(()=> showPosWarning(posWarnInfo, !!budgetWarningInfo), budgetWarningInfo ? 1200 : 500);
+      }
     }
     closeTxModal();
     refreshCurrentView();
   };
+}
+
+/* ======================================================================
+   POS BULANAN (jatah bulanan dengan bar menurun)
+   ====================================================================== */
+function posById(id){ return state.pos.find(p=>p.id===id) || null; }
+function posNameById(id){ const p = posById(id); return p ? p.name : null; }
+function computePosUsed(pos, list){
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  return (list || state.transactions).reduce((sum, tx)=>{
+    if(tx.type!=='expense' || tx.posId!==pos.id) return sum;
+    const d = new Date(tx.date+'T00:00:00');
+    if(isNaN(d.getTime()) || d.getFullYear()!==y || d.getMonth()!==m) return sum;
+    return sum + (Number(tx.amount)||0);
+  }, 0);
+}
+function posPercentLeft(pos, used){
+  if(!pos.amount || pos.amount<=0) return 0;
+  return Math.max(0, Math.min(100, (pos.amount-used)/pos.amount*100));
+}
+function posFillClass(pctLeft){
+  return pctLeft>50 ? 'budget-fill-safe' : (pctLeft>=25 ? 'budget-fill-near' : 'budget-fill-over');
+}
+function posDaysLeftInMonth(){
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  return Math.max(1, last - now.getDate() + 1);
+}
+function getLastPos(){ try{ return localStorage.getItem(LS_LASTPOS) || ''; }catch(e){ return ''; } }
+function setLastPos(v){ try{ localStorage.setItem(LS_LASTPOS, v || ''); }catch(e){} }
+
+function renderPosList(){
+  const wrap = document.getElementById('posList');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  if(state.pos.length===0){
+    wrap.innerHTML = '<div class="empty-state small">Belum ada pos. Buat pos pertamamu, misalnya Uang Jajan!</div>';
+    return;
+  }
+  state.pos.forEach(p=> wrap.appendChild(buildPosCard(p)));
+}
+function buildPosCard(p){
+  const used = computePosUsed(p);
+  const card = document.createElement('div');
+  card.className = 'goal-card';
+  card.setAttribute('data-pos-card', p.id);
+  if(p.unlimited){
+    card.innerHTML = `
+      <div class="goal-card-head">
+        <div>
+          <div class="goal-name">${escapeHtml(p.name)}</div>
+          <div class="goal-target">Tanpa batas · sesuai uang yang ada</div>
+        </div>
+        <button class="goal-card-menu" data-pos-id="${p.id}">⋮</button>
+      </div>
+      <div class="goal-foot">
+        <span class="goal-saved">${formatBalance(used)}</span>
+        <span class="goal-percent">terpakai bulan ini</span>
+      </div>
+      <span class="goal-badge near">♾️ Tanpa batas</span>
+    `;
+  } else {
+    const left = p.amount - used;
+    const pctLeft = posPercentLeft(p, used);
+    const over = left < 0;
+    card.innerHTML = `
+      <div class="goal-card-head">
+        <div>
+          <div class="goal-name">${escapeHtml(p.name)}</div>
+          <div class="goal-target">Jatah ${formatRupiah(p.amount)} / bulan</div>
+        </div>
+        <button class="goal-card-menu" data-pos-id="${p.id}">⋮</button>
+      </div>
+      <div class="goal-progress-track"><div class="goal-progress-fill ${posFillClass(pctLeft)}" style="width:${pctLeft}%"></div></div>
+      <div class="goal-foot">
+        <span class="goal-saved">Sisa ${formatBalance(Math.max(0,left))}</span>
+        <span class="goal-percent">${pctLeft.toFixed(0)}%</span>
+      </div>
+      ${over
+        ? `<div class="goal-remaining pos-over">⚠️ Melebihi ${formatBalance(-left)}</div>`
+        : `<div class="goal-remaining">≈ ${formatBalance(left/posDaysLeftInMonth())} per hari sampai akhir bulan</div>`}
+    `;
+  }
+  card.querySelector('.goal-card-menu').addEventListener('click', (e)=>{ e.stopPropagation(); openPosMenu(p.id); });
+  return card;
+}
+
+function renderPosDashboardSummary(){
+  const card = document.getElementById('posDashCard');
+  if(!card) return;
+  const limited = state.pos.filter(p=> !p.unlimited);
+  if(state.pos.length===0){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const rows = limited.map(p=>{
+    const used = computePosUsed(p);
+    return {p, used, left: p.amount-used, pct: posPercentLeft(p, used)};
+  }).sort((a,b)=> a.pct - b.pct).slice(0,3);
+  const list = document.getElementById('posDashList');
+  if(rows.length===0){
+    list.innerHTML = '<div class="goal-remaining">Semua pos tanpa batas.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(r=>`
+    <div style="margin-bottom:12px;">
+      <div class="goal-foot" style="margin-top:0;">
+        <span class="goal-saved">${escapeHtml(r.p.name)}</span>
+        <span class="goal-percent">${r.left<0 ? 'melebihi '+formatBalance(-r.left) : 'sisa '+formatBalance(r.left)+' ('+r.pct.toFixed(0)+'%)'}</span>
+      </div>
+      <div class="goal-progress-track"><div class="goal-progress-fill ${posFillClass(r.pct)}" style="width:${r.pct}%"></div></div>
+    </div>`).join('');
+}
+document.getElementById('posDashViewBtn').addEventListener('click', ()=>{
+  showPage('uang');
+  setTimeout(()=>{ const el = document.getElementById('posList'); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }, 80);
+});
+
+document.getElementById('addPosBtn').addEventListener('click', ()=> openPosForm(null));
+
+function openPosForm(pos){
+  const isEdit = !!pos;
+  let unlimited = isEdit ? !!pos.unlimited : false;
+  showPrompt(isEdit ? 'Edit Pos' : 'Pos Baru', `
+    <div class="field"><label>Nama pos</label><input id="posNameInput" type="text" maxlength="30" placeholder="Contoh: Uang Jajan" value="${isEdit ? escapeHtml(pos.name) : ''}"></div>
+    <div class="field"><label>Jenis pos</label>
+      <div class="view-toggle" id="posKindToggle" style="margin-bottom:6px;">
+        <button type="button" class="view-toggle-btn" data-kind="limit">📊 Berbatas</button>
+        <button type="button" class="view-toggle-btn" data-kind="free">♾️ Tanpa batas</button>
+      </div>
+      <div id="posKindHint" style="color:var(--ink-soft); font-size:0.8rem;"></div>
+    </div>
+    <div class="field" id="posAmountField"><label>Jatah per bulan (Rp)</label>
+      <div class="amount-input-row"><input id="posAmountInput" type="number" min="1" placeholder="0" value="${(isEdit && !pos.unlimited && pos.amount>0) ? pos.amount : ''}"><button type="button" class="k-btn" id="posAmountK">K</button></div>
+    </div>
+    <button class="btn-primary" id="posSaveBtn">Simpan</button>
+  `);
+  const amountField = document.getElementById('posAmountField');
+  const hint = document.getElementById('posKindHint');
+  function setKind(free){
+    unlimited = free;
+    document.querySelectorAll('#posKindToggle .view-toggle-btn').forEach(b=>{
+      b.classList.toggle('active', (b.dataset.kind==='free') === free);
+    });
+    amountField.classList.toggle('hidden', free);
+    hint.textContent = free
+      ? 'Tidak ada jatah dan bar. Hanya mencatat total terpakai bulan ini, cocok untuk dana darurat.'
+      : 'Ada jatah bulanan dan bar yang menurun setiap kali kamu membeli.';
+  }
+  setKind(unlimited);
+  document.querySelectorAll('#posKindToggle .view-toggle-btn').forEach(b=>{
+    b.addEventListener('click', ()=> setKind(b.dataset.kind==='free'));
+  });
+  document.getElementById('posAmountK').addEventListener('click', ()=>{
+    const inp = document.getElementById('posAmountInput');
+    const digits = inp.value.replace(/[^0-9]/g,'');
+    if(!digits || digits==='0') return;
+    inp.value = digits + '000';
+    inp.focus();
+  });
+  document.getElementById('posSaveBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('posNameInput').value.trim();
+    if(!name){ toast('Nama pos wajib diisi'); return; }
+    const dup = state.pos.some(p=> p.name.toLowerCase()===name.toLowerCase() && (!isEdit || p.id!==pos.id));
+    if(dup){ toast('Nama pos sudah dipakai'); return; }
+    let amount = 0;
+    if(!unlimited){
+      amount = Number(document.getElementById('posAmountInput').value);
+      if(!amount || amount<=0){ toast('Jatah harus lebih dari 0'); return; }
+    }
+    if(isEdit){
+      pos.name = name; pos.unlimited = unlimited; pos.amount = amount;
+    } else {
+      state.pos.push({id:'pos_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name, unlimited, amount, createdAt: Date.now()});
+    }
+    savePos();
+    closePrompt();
+    toast(isEdit ? 'Pos diperbarui' : 'Pos dibuat');
+    refreshCurrentView();
+  });
+}
+function openPosMenu(id){
+  const p = posById(id);
+  if(!p) return;
+  const used = computePosUsed(p);
+  const info = p.unlimited
+    ? `Tanpa batas · terpakai bulan ini ${formatRupiah(used)}`
+    : `Jatah ${formatRupiah(p.amount)} · terpakai bulan ini ${formatRupiah(used)}`;
+  showPrompt(p.name, `
+    <p><span style="color:var(--ink-soft); font-size:0.85rem;">${info}</span></p>
+    <button class="btn-secondary" id="posEditBtn">✏️ Edit Pos</button>
+    <button class="btn-primary danger" id="posDelBtn">🗑️ Hapus Pos</button>
+  `);
+  document.getElementById('posEditBtn').addEventListener('click', ()=>{ closePrompt(); openPosForm(p); });
+  document.getElementById('posDelBtn').addEventListener('click', ()=>{
+    closePrompt();
+    showPrompt('Hapus Pos', `
+      <p>Hapus pos "${escapeHtml(p.name)}"? Pembelian lama tetap tersimpan, hanya label pos-nya yang hilang.</p>
+      <button class="btn-primary danger" id="posDelConfirm">Ya, Hapus</button>
+      <button class="btn-secondary" id="posDelCancel">Batal</button>
+    `);
+    document.getElementById('posDelConfirm').addEventListener('click', ()=>{
+      state.pos = state.pos.filter(x=>x.id!==id);
+      savePos();
+      if(getLastPos()===id) setLastPos('');
+      closePrompt();
+      toast('Pos dihapus');
+      refreshCurrentView();
+    });
+    document.getElementById('posDelCancel').addEventListener('click', closePrompt);
+  });
+}
+function showPosWarning(info, soft){
+  const p = info.pos;
+  if(info.level==='over'){
+    if(soft){ toast(`⚠️ Pos "${p.name}" melebihi jatah bulan ini`); return; }
+    showPrompt('⚠️ Jatah Pos Habis', `
+      <p>Pos <strong>${escapeHtml(p.name)}</strong> sudah melebihi jatah bulan ini. Terpakai ${formatRupiah(info.used)} dari ${formatRupiah(p.amount)} (lebih ${formatRupiah(info.used-p.amount)}).</p>
+      <button class="btn-primary" id="posWarnOk">Oke</button>
+    `);
+    document.getElementById('posWarnOk').addEventListener('click', closePrompt);
+  } else {
+    toast(`🟠 Pos "${p.name}" tinggal ${formatRupiah(p.amount-info.used)} lagi`);
+  }
 }
 
 /* ======================================================================
@@ -1992,6 +2318,13 @@ function updateTransaction(id, updates){
     saveTransactions();
   }
 }
+function replaceTransaction(id, tx){
+  const idx = state.transactions.findIndex(t=>t.id===id);
+  if(idx>-1){
+    state.transactions[idx] = {...tx, id, createdAt: state.transactions[idx].createdAt};
+    saveTransactions();
+  }
+}
 function deleteTransaction(id){
   state.transactions = state.transactions.filter(t=>t.id!==id);
   saveTransactions();
@@ -2038,7 +2371,7 @@ function wouldCauseNegativeBalance(candidateTx, excludeTxId){
   const EPS = -1; // toleransi pembulatan kecil
   if(Object.values(bal).some(v=> v < EPS)) return true;
   // Cek saldo tabungan yang dipilih (tabungan bernama atau Tabungan Umum)
-  const takesFromSavings = candidateTx.type==='withdraw' || (candidateTx.type==='expense' && candidateTx.account==='tabungan');
+  const takesFromSavings = candidateTx.type==='withdraw' || candidateTx.type==='pot_transfer' || (candidateTx.type==='expense' && candidateTx.account==='tabungan');
   if(takesFromSavings){
     const pot = candidateTx.goalId ? state.goals.find(g=> g.id===candidateTx.goalId && g.status!=='purchased') : null;
     if(pot){
@@ -2296,6 +2629,7 @@ document.getElementById('backupBtn').addEventListener('click', ()=>{
     goals: state.goals,
     achievements: state.achievements,
     budgets: state.budgets,
+    pos: state.pos,
     accounts: customAccounts,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
@@ -2326,6 +2660,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
     const goalsInFile = Array.isArray(data.goals) ? data.goals : [];
     const achievementsInFile = Array.isArray(data.achievements) ? data.achievements : [];
     const budgetsInFile = Array.isArray(data.budgets) ? data.budgets : [];
+    const posInFile = Array.isArray(data.pos) ? data.pos.filter(p=> p && p.id && p.name) : [];
     showPrompt('Import Data', `
       <p>Mengimpor data akan <strong>mengganti semua data saat ini</strong> (${state.transactions.length} transaksi, ${state.goals.length} target, ${state.budgets.length} budget) dengan data dari file ini (${data.transactions.length} transaksi, ${goalsInFile.length} target, ${budgetsInFile.length} budget). Lanjutkan?</p>
       <button class="btn-primary" id="importConfirm">Ya, Ganti Data</button>
@@ -2337,6 +2672,8 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
       state.goals = goalsInFile;
       state.achievements = achievementsInFile;
       state.budgets = budgetsInFile;
+      state.pos = posInFile;
+      savePos();
       customAccounts = Array.isArray(data.accounts) ? data.accounts.filter(a=> a && a.key && a.label && GROUPS.some(g=>g.key===a.group)) : [];
       rebuildAccounts(); saveAccounts(); renderAccountFilter();
       saveTransactions();
@@ -2356,7 +2693,7 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
 
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   showPrompt('Hapus Semua Data', `
-    <p>Semua transaksi, kategori buatan, Target Tabungan, dan Budget akan dihapus permanen. Tindakan ini tidak dapat dibatalkan. Pastikan sudah backup data jika perlu.</p>
+    <p>Semua transaksi, kategori buatan, Target Tabungan, Budget, dan Pos Bulanan akan dihapus permanen. Tindakan ini tidak dapat dibatalkan. Pastikan sudah backup data jika perlu.</p>
     <button class="btn-primary danger" id="resetConfirm">Ya, Hapus Semua</button>
     <button class="btn-secondary" id="resetCancel">Batal</button>
   `);
@@ -2365,6 +2702,8 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
     state.categories = DEFAULT_CATEGORIES.map(name=>({id:'cat_'+name.toLowerCase().replace(/\s+/g,'_'), name}));
     state.goals = [];
     state.budgets = [];
+    state.pos = [];
+    savePos();
     customAccounts = []; rebuildAccounts(); saveAccounts(); renderAccountFilter();
     saveTransactions();
     saveCategories();

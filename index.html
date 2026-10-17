@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
@@ -115,6 +115,12 @@
         <div class="goal-progress-track"><div class="goal-progress-fill" id="budgetDashFill" style="width:0%"></div></div>
         <div class="goal-remaining" id="budgetDashNear"></div>
         <button class="btn-outline full" id="budgetDashViewBtn">Lihat Budget</button>
+      </div>
+
+      <div id="posDashCard" class="chart-card hidden">
+        <h3>🏷️ Pos Bulanan</h3>
+        <div id="posDashList"></div>
+        <button class="btn-outline full" id="posDashViewBtn">Lihat Pos</button>
       </div>
 
       <div class="quick-actions">
@@ -248,13 +254,16 @@
       <div class="wallet-groups" id="walletGrid"></div>
 
       <button id="addAccountBtn" class="btn-outline full">+ Tambah Akun</button>
+      <button id="transferBtn" class="btn-outline full">🔁 Pindah Uang</button>
       <div class="wallet-grid" id="savingsWrap"></div>
-
-      <button id="transferBtn" class="btn-outline full">🔁 Pindah Uang Antar Dompet</button>
 
       <h2 class="section-title">🎯 Tabungan</h2>
       <div id="goalList" class="goal-list"></div>
       <button id="addGoalBtn" class="btn-outline full">+ Tambah Tabungan</button>
+
+      <h2 class="section-title">🏷️ Pos Bulanan</h2>
+      <div id="posList" class="goal-list"></div>
+      <button id="addPosBtn" class="btn-outline full">+ Tambah Pos</button>
 
       <h2 class="section-title">Kategori Pembelian</h2>
       <div id="categoryList" class="category-list"></div>
@@ -494,7 +503,7 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="chart.umd.min.js"></script>
-<script src="script.js?v=13"></script>
+<script src="script.js?v=15"></script>
 <script src="music.js?v=2"></script>
 <script>
 if('serviceWorker' in navigator){
