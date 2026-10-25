@@ -219,6 +219,13 @@
       </div>
 
       <div class="chart-card">
+        <h3>🎨 Warna Dompet</h3>
+        <p style="color:var(--ink-soft); font-size:0.8rem; margin:0 0 6px;">Ketuk sebuah dompet untuk mengganti warnanya di grafik.</p>
+        <div id="walletColorList"></div>
+        <button class="btn-secondary" id="walletColorReset" style="margin-top:12px;">↺ Kembalikan warna awal</button>
+      </div>
+
+      <div class="chart-card">
         <h3>📦 Pembelian Target Tabungan</h3>
         <div class="stat-grid">
           <div class="mini-stat"><span>Jumlah target dibeli</span><strong id="statGoalCount">0</strong></div>
@@ -503,7 +510,7 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="chart.umd.min.js"></script>
-<script src="script.js?v=15"></script>
+<script src="script.js?v=16"></script>
 <script src="music.js?v=2"></script>
 <script>
 if('serviceWorker' in navigator){

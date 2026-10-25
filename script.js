@@ -19,6 +19,7 @@ const DEFAULT_CATEGORIES = ['Makanan','Minuman','Transportasi','Pendidikan','Tek
 
 const LS_ACCOUNTS = 'kp_accounts_v1';
 const LS_BACKUP_PRE = 'kp_backup_pre_groups_v1';
+const LS_WCOLORS = 'kp_wcolors_v1';
 const GROUPS = [
   {key:'ewallet', label:'E-Wallet', icon:'📱'},
   {key:'bank', label:'Bank', icon:'🏦'},
@@ -65,6 +66,7 @@ const state = {
   calendarMonth: new Date().getMonth(),
   budgets: [],
   pos: [],
+  walletColors: {},
   budgetMonth: new Date().getMonth()+1,
   budgetYear: new Date().getFullYear(),
 };
@@ -103,6 +105,7 @@ function loadData(){
   try{ state.budgets = JSON.parse(localStorage.getItem(LS_BUDGETS)) || []; }catch(e){ state.budgets = []; }
   try{ state.pos = JSON.parse(localStorage.getItem(LS_POS)) || []; }catch(e){ state.pos = []; }
   if(!Array.isArray(state.pos)) state.pos = [];
+  try{ state.walletColors = sanitizeWalletColors(JSON.parse(localStorage.getItem(LS_WCOLORS))); }catch(e){ state.walletColors = {}; }
 }
 
 function saveTransactions(){ localStorage.setItem(LS_TX, JSON.stringify(state.transactions)); }
@@ -957,6 +960,7 @@ function renderStatistik(){
   const goalAmount = goalPurchases.reduce((s,tx)=> s + (Number(tx.amount)||0), 0);
   document.getElementById('statGoalCount').textContent = goalPurchases.length;
   document.getElementById('statGoalAmount').textContent = formatRupiah(goalAmount);
+  renderWalletColors();
 
   renderAnalysis();
   renderAchievements();
@@ -1099,6 +1103,96 @@ function renderAchievements(){
   }).join('');
 }
 
+/* ======================================================================
+   WARNA DOMPET (diatur di halaman Statistik)
+   ====================================================================== */
+const WALLET_PALETTE = ['#E1A23D','#8B5CF6','#2F6FA3','#6B7280','#D9534F','#0EA5A5','#C2410C','#7C3AED','#1F6F50','#EC4899','#84CC16','#06B6D4'];
+const DEFAULT_PIE_COLORS = ['#E1A23D','#8B5CF6','#2F6FA3','#6B7280','#D9534F','#0EA5A5','#C2410C','#7C3AED'];
+const TABUNGAN_COLOR = '#1F6F50';
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+function sanitizeWalletColors(obj){
+  const out = {};
+  if(obj && typeof obj==='object' && !Array.isArray(obj)){
+    Object.keys(obj).forEach(k=>{ if(typeof obj[k]==='string' && HEX_RE.test(obj[k])) out[k] = obj[k]; });
+  }
+  return out;
+}
+function defaultWalletColor(key){
+  if(key==='tabungan') return TABUNGAN_COLOR;
+  const i = ACCOUNTS.findIndex(a=>a.key===key);
+  return DEFAULT_PIE_COLORS[(i<0 ? 0 : i) % DEFAULT_PIE_COLORS.length];
+}
+function walletColor(key){
+  const c = state.walletColors && state.walletColors[key];
+  return (typeof c==='string' && HEX_RE.test(c)) ? c : defaultWalletColor(key);
+}
+function walletColorEntries(){
+  return [...ACCOUNTS.map(a=>({key:a.key, label:a.label})), {key:'tabungan', label:'Tabungan'}];
+}
+function saveWalletColors(){ localStorage.setItem(LS_WCOLORS, JSON.stringify(state.walletColors)); }
+function refreshWalletColors(){ renderWalletColors(); updateCharts(); }
+
+function renderWalletColors(){
+  const wrap = document.getElementById('walletColorList');
+  if(!wrap) return;
+  const entries = walletColorEntries();
+  wrap.innerHTML = '';
+  entries.forEach((e, idx)=>{
+    const color = walletColor(e.key);
+    const twin = entries.find(o=> o.key!==e.key && walletColor(o.key).toLowerCase()===color.toLowerCase());
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.dataset.key = e.key;
+    row.style.cssText = 'display:flex; align-items:center; gap:12px; width:100%; padding:11px 2px; background:none; border:none; color:inherit; font:inherit; text-align:left; cursor:pointer;' + (idx<entries.length-1 ? ' border-bottom:1px solid var(--line);' : '');
+    row.innerHTML = `
+      <span style="width:26px; height:26px; border-radius:50%; background:${color}; flex:none; box-shadow:inset 0 0 0 2px rgba(255,255,255,0.25);"></span>
+      <span style="flex:1;">${escapeHtml(e.label)}</span>
+      ${twin ? `<span style="font-size:0.75rem; color:var(--ink-soft);">⚠️ sama dengan ${escapeHtml(twin.label)}</span>` : ''}
+      <span style="color:var(--ink-soft);">›</span>`;
+    row.addEventListener('click', ()=> openWalletColorPicker(e.key, e.label));
+    wrap.appendChild(row);
+  });
+}
+
+function openWalletColorPicker(key, label){
+  const cur = walletColor(key).toLowerCase();
+  const swatches = WALLET_PALETTE.map(c=>
+    `<button type="button" class="wc-sw" data-color="${c}" aria-label="Warna ${c}" style="width:42px; height:42px; border-radius:50%; background:${c}; cursor:pointer; border:3px solid ${c.toLowerCase()===cur ? 'var(--ink)' : 'transparent'};"></button>`
+  ).join('');
+  showPrompt('Warna ' + label, `
+    <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:14px;">${swatches}</div>
+    <div class="field"><label>Warna bebas</label><input type="color" id="wcCustom" value="${cur}" style="width:100%; height:44px; padding:2px;"></div>
+    <button class="btn-primary" id="wcCustomSave">Pakai warna bebas</button>
+    <button class="btn-secondary" id="wcDefault">↺ Kembalikan warna awal</button>
+  `);
+  function apply(color){
+    if(!HEX_RE.test(color)) return;
+    state.walletColors[key] = color;
+    saveWalletColors();
+    closePrompt();
+    refreshWalletColors();
+    toast('Warna ' + label + ' diperbarui');
+  }
+  document.querySelectorAll('#promptBody .wc-sw, .wc-sw').forEach(b=> b.addEventListener('click', ()=> apply(b.dataset.color)));
+  document.getElementById('wcCustomSave').addEventListener('click', ()=> apply(document.getElementById('wcCustom').value));
+  document.getElementById('wcDefault').addEventListener('click', ()=>{
+    delete state.walletColors[key];
+    saveWalletColors();
+    closePrompt();
+    refreshWalletColors();
+    toast('Warna ' + label + ' dikembalikan');
+  });
+}
+const walletColorResetBtn = document.getElementById('walletColorReset');
+if(walletColorResetBtn){
+  walletColorResetBtn.addEventListener('click', ()=>{
+    state.walletColors = {};
+    saveWalletColors();
+    refreshWalletColors();
+    toast('Semua warna dompet dikembalikan');
+  });
+}
+
 function updateCharts(){
   const range = state.chartTimeFilter;
   const masuk = sumWhere(tx=>tx.type==='income', range);
@@ -1139,7 +1233,7 @@ function updateCharts(){
   if(pieChartInstance) pieChartInstance.destroy();
   const pieLabels = [...ACCOUNTS.map(a=>a.label), 'Tabungan'];
   const pieData = [...ACCOUNTS.map(a=>bal[a.key]), bal.tabungan];
-  const PIE_COLORS = ['#E1A23D','#8B5CF6','#2F6FA3','#6B7280','#D9534F','#0EA5A5','#C2410C','#7C3AED'];
+  const pieKeys = [...ACCOUNTS.map(a=>a.key), 'tabungan'];
   const hasAny = pieData.some(v=>v>0);
   pieChartInstance = new Chart(pieCtx, {
     type: 'doughnut',
@@ -1147,7 +1241,7 @@ function updateCharts(){
       labels: pieLabels,
       datasets: [{
         data: hasAny ? pieData : pieData.map(()=>1),
-        backgroundColor: pieLabels.map((_,i)=> i===pieLabels.length-1 ? '#1F6F50' : PIE_COLORS[i%PIE_COLORS.length]),
+        backgroundColor: pieKeys.map(k=> walletColor(k)),
         borderWidth: 2,
         borderColor: themeSurfaceColor,
       }]
@@ -2622,7 +2716,7 @@ document.getElementById('changePinBtn').addEventListener('click', ()=>{
 document.getElementById('backupBtn').addEventListener('click', ()=>{
   const payload = {
     app: 'buku-kas',
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     transactions: state.transactions,
     categories: state.categories,
@@ -2631,6 +2725,7 @@ document.getElementById('backupBtn').addEventListener('click', ()=>{
     budgets: state.budgets,
     pos: state.pos,
     accounts: customAccounts,
+    walletColors: state.walletColors,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -2674,6 +2769,8 @@ document.getElementById('importFile').addEventListener('change', (e)=>{
       state.budgets = budgetsInFile;
       state.pos = posInFile;
       savePos();
+      state.walletColors = sanitizeWalletColors(data.walletColors);
+      saveWalletColors();
       customAccounts = Array.isArray(data.accounts) ? data.accounts.filter(a=> a && a.key && a.label && GROUPS.some(g=>g.key===a.group)) : [];
       rebuildAccounts(); saveAccounts(); renderAccountFilter();
       saveTransactions();
@@ -2704,6 +2801,8 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
     state.budgets = [];
     state.pos = [];
     savePos();
+    state.walletColors = {};
+    saveWalletColors();
     customAccounts = []; rebuildAccounts(); saveAccounts(); renderAccountFilter();
     saveTransactions();
     saveCategories();
